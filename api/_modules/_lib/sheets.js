@@ -2,7 +2,7 @@ import { google } from 'googleapis';
 import { getCached, setCached, clearCache } from './cache.js';
 import { ApiError } from './errors.js';
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1nq3PVJm0--u34XKWS4KzOchVPmXbQPcdW5EJzXWTF9Y';
 const SA_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const SA_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
