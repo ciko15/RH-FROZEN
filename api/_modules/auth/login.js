@@ -24,15 +24,8 @@ export default async function handler(req, res) {
     console.log(`[AUTH LOGIN ATTEMPT] Username: "${username}"`);
 
     const users = await getTabRows('Users');
-    // Cari user berdasarkan username persis, atau alias (misal 'noval' mencocokkan 'sales_kertek' atau full_name 'Noval')
-    let user = users.find(u => u.username && u.username.toLowerCase() === username);
-    if (!user) {
-      user = users.find(u => {
-        const uName = (u.username || '').toLowerCase();
-        const fName = (u.full_name || '').toLowerCase();
-        return uName.endsWith('_' + username) || fName.includes(username);
-      });
-    }
+    // Cari user persis berdasarkan kolom 'username' di Google Spreadsheet (tab Users)
+    const user = users.find(u => u.username && u.username.toLowerCase() === username);
 
     // Anti timing / account enumeration
     if (!user) {

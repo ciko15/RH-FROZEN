@@ -343,19 +343,17 @@
               <span style="font-size:11px; color:var(--text-muted);">Bisa bayar penuh atau sebagian (cicil)</span>
             </div>
             <input
-              v-model.number="directPaidAmount"
-              type="number"
-              min="0"
-              :max="directPayTotalDue"
+              v-model="formattedDirectPaidAmount"
+              type="text"
               inputmode="numeric"
               :disabled="directPayMethod === 'Tempo'"
               placeholder="0"
             />
             <!-- Quick Preset Buttons -->
             <div class="quick-pay-presets" v-if="directPayMethod !== 'Tempo'">
-              <button type="button" class="btn-preset" @click="directPaidAmount = directPayTotalDue">Bayar Lunas (100%)</button>
-              <button type="button" class="btn-preset" @click="directPaidAmount = Math.round(directPayTotalDue / 2)">Bayar 50%</button>
-              <button type="button" class="btn-preset" @click="directPaidAmount = 0">Bayar Nanti (Rp 0)</button>
+              <button type="button" class="btn-preset" @click="setDirectPaidAmount(directPayTotalDue)">Bayar Lunas (100%)</button>
+              <button type="button" class="btn-preset" @click="setDirectPaidAmount(Math.round(directPayTotalDue / 2))">Bayar 50%</button>
+              <button type="button" class="btn-preset" @click="setDirectPaidAmount(0)">Bayar Nanti (Rp 0)</button>
             </div>
           </div>
 
@@ -753,6 +751,22 @@ const directPayRemaining = computed(() => {
   const rem = directPayTotalDue.value - (directPaidAmount.value || 0);
   return Math.max(rem, 0);
 });
+
+// Pemisah ribuan otomatis untuk input bayar langsung kasir
+const formattedDirectPaidAmount = computed({
+  get() {
+    if (directPaidAmount.value === 0) return '0';
+    return (directPaidAmount.value || '').toLocaleString('id-ID');
+  },
+  set(val) {
+    const raw = String(val).replace(/\D/g, '');
+    directPaidAmount.value = raw ? parseInt(raw, 10) : 0;
+  }
+});
+
+function setDirectPaidAmount(val) {
+  directPaidAmount.value = val;
+}
 
 function onDirectPayMethodChange() {
   if (directPayMethod.value === 'Tempo') {

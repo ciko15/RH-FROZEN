@@ -152,19 +152,17 @@
               <span style="font-size:11px; color:var(--text-muted);">Bisa bayar penuh atau sebagian (cicil)</span>
             </div>
             <input
-              v-model.number="paidAmount"
-              type="number"
-              min="0"
-              :max="payTotalDue"
+              v-model="formattedPaidAmount"
+              type="text"
               inputmode="numeric"
               :disabled="payMethod === 'Tempo'"
               placeholder="0"
             />
             <!-- Quick preset buttons -->
             <div class="quick-pay-presets" v-if="payMethod !== 'Tempo'">
-              <button type="button" class="btn-preset" @click="paidAmount = payTotalDue">Bayar Lunas (100%)</button>
-              <button type="button" class="btn-preset" @click="paidAmount = Math.round(payTotalDue / 2)">Bayar 50%</button>
-              <button type="button" class="btn-preset" @click="paidAmount = 0">Bayar Nanti (Rp 0)</button>
+              <button type="button" class="btn-preset" @click="setPaidAmount(payTotalDue)">Bayar Lunas (100%)</button>
+              <button type="button" class="btn-preset" @click="setPaidAmount(Math.round(payTotalDue / 2))">Bayar 50%</button>
+              <button type="button" class="btn-preset" @click="setPaidAmount(0)">Bayar Nanti (Rp 0)</button>
             </div>
           </div>
 
@@ -262,6 +260,22 @@ const payRemaining = computed(() => {
   const rem = payTotalDue.value - (paidAmount.value || 0);
   return Math.max(rem, 0);
 });
+
+// Pemisah ribuan otomatis untuk input jumlah bayar
+const formattedPaidAmount = computed({
+  get() {
+    if (paidAmount.value === 0) return '0';
+    return (paidAmount.value || '').toLocaleString('id-ID');
+  },
+  set(val) {
+    const raw = String(val).replace(/\D/g, '');
+    paidAmount.value = raw ? parseInt(raw, 10) : 0;
+  }
+});
+
+function setPaidAmount(val) {
+  paidAmount.value = val;
+}
 
 function onMethodChange() {
   if (payMethod.value === 'Tempo') {

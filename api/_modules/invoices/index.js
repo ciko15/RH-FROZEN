@@ -10,7 +10,7 @@ import { handleApiError, ApiError } from '../_lib/errors.js';
 const createInvoiceSchema = z.object({
   order_id: z.string().min(1, 'ID Order wajib disertakan'),
   pay_method: z.enum(['Tunai', 'Transfer', 'Tempo'], { required_error: 'Metode pembayaran wajib dipilih' }),
-  paid_amount: z.number().min(0, 'Jumlah bayar tidak boleh negatif'),
+  paid_amount: z.coerce.number().min(0, 'Jumlah bayar tidak boleh negatif').optional().default(0),
   note: z.string().optional().default(''),
   approved_by: z.string().optional()
 });
