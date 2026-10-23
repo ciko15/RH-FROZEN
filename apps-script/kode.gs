@@ -683,12 +683,40 @@ function setShipped(payload) {
       return { ok: false, error: 'INVALID_STATUS', message: 'Hanya order berstatus Proses yang dapat diubah ke Dikirim' };
     }
 
+    // Kurangi Stok Produk saat orderan diubah menjadi Dikirim
+    const orderItems = getSheetData('OrderItems').filter(oi => oi.order_id === order_id);
+    const products = getSheetData('Products');
+    const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'active'];
+    const nowStr = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
+
+    for (const item of orderItems) {
+      const prod = products.find(p => p.id === item.product_id);
+      if (prod) {
+        const currentStock = parseInt(prod.stock, 10) || 0;
+        const qty = parseInt(item.qty, 10) || 0;
+        const newStock = Math.max(0, currentStock - qty);
+        prod.stock = newStock;
+        updateSheetRow('Products', prod._rowIndex, prod, prodHeaders);
+
+        appendSheetRow('StockMovements', {
+          id: Utilities.getUuid(),
+          date_time: nowStr,
+          product_id: prod.id,
+          change: -qty,
+          reason: 'Kirim Order',
+          ref: order.order_no || order.id,
+          balance_after: newStock,
+          user_id: user_id
+        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id']);
+      }
+    }
+
     order.status = 'Dikirim';
     const headers = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'];
     updateSheetRow('Orders', order._rowIndex, order, headers);
 
     writeAuditLog(user_id, 'SET_SHIPPED', { order_id: order_id, order_no: order.order_no });
-    return { ok: true, data: order, message: 'Status order berhasil diubah menjadi Dikirim' };
+    return { ok: true, data: order, message: 'Status order berhasil diubah menjadi Dikirim dan stok telah dikurangi' };
   } finally {
     lock.releaseLock();
   }
