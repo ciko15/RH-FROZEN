@@ -343,33 +343,41 @@ async function submitPayment() {
     return;
   }
 
-  payLoading.value = true;
-  const idempotencyKey = crypto.randomUUID();
+  const targetOrder = payModalOrder.value;
+  const payPayload = {
+    order_id: targetOrder.id,
+    pay_method: payMethod.value,
+    paid_amount: paidAmount.value,
+    note: payNote.value
+  };
 
-  try {
-    const res = await apiFetch('/api/invoices', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey },
-      body: JSON.stringify({
-        order_id: payModalOrder.value.id,
-        pay_method: payMethod.value,
-        paid_amount: paidAmount.value,
-        note: payNote.value
-      })
-    });
+  // INSTANT OPTIMISTIC UPDATE: Langsung tutup modal dan pindahkan order ke daftar Selesai seketika
+  payModalOrder.value = null;
+  waitingOrders.value = waitingOrders.value.filter(o => o.id !== targetOrder.id);
+  appStore.showToast('Pembayaran berhasil diproses! (Sinkronisasi di latar belakang...)', 'success');
+  appStore.startSync();
 
-    appStore.showToast('Pembayaran berhasil diproses!', 'success');
-    payModalOrder.value = null;
-
-    // Tampilkan invoice yang baru terbit
-    await openInvoiceDetail(res.data);
-    fetchWaitingOrders();
-    fetchCompletedInvoices();
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
-  } finally {
-    payLoading.value = false;
-  }
+  // Jalankan request ke backend & spreadsheet di background
+  (async () => {
+    try {
+      const res = await apiFetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(payPayload)
+      });
+      // Ambil detail invoice lengkap
+      const resDetail = await apiFetch(`/api/invoices/${res.data.id}`);
+      selectedInvoice.value = resDetail.data;
+    } catch (err) {
+      console.error('[BACKGROUND INVOICE ERROR]:', err);
+      appStore.showToast(`Gagal memproses ke database: ${err.message}`, 'error');
+      // Kembalikan jika error
+      fetchWaitingOrders();
+    } finally {
+      appStore.finishSync();
+      fetchCompletedInvoices();
+    }
+  })();
 }
 
 async function openInvoiceDetail(inv) {

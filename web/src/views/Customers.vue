@@ -455,6 +455,7 @@ async function submitCreateCustomer() {
   newCust.value = { name: '', address: '', phone: '', branch_id: branches.value[0]?.id || '', sales_id: '', credit_limit: 0, term_days: 14 };
 
   // 2. DI BALIK LAYAR: Simpan ke Google Sheet secara asinkron
+  appStore.startSync();
   apiFetch('/api/customers', {
     method: 'POST',
     body: JSON.stringify(payloadToSend)
@@ -471,6 +472,8 @@ async function submitCreateCustomer() {
     appStore.showToast('Gagal sinkron ke database: ' + err.message, 'error');
     // Rollback jika server gagal
     customers.value = customers.value.filter(c => c.id !== tempId);
+  }).finally(() => {
+    appStore.finishSync();
   });
 }
 

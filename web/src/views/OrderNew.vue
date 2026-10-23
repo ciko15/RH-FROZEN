@@ -702,31 +702,38 @@ async function handleSubmit() {
     }))
   };
 
-  try {
-    if (navigator.onLine) {
-      await apiFetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': clientKey },
-        body: JSON.stringify(payload)
-      });
-      appStore.showToast('Pesanan berhasil disimpan!', 'success');
-    } else {
-      // Simpan ke antrean offline IndexedDB
-      await queueOfflineOrder({
-        ...payload,
-        customer_name: selectedCustomer.value?.name,
-        total_amount: totalOrder.value
-      });
-      await offlineStore.loadQueue();
-      appStore.showToast('Mode Offline: Pesanan disimpan ke antrean', 'info');
-    }
+  // INSTANT OPTIMISTIC SAVE: Pengguna langsung melihat sukses tanpa menunggu Google Sheets
+  appStore.showToast('Pesanan berhasil disimpan! (Menyinkronkan di latar belakang...)', 'success');
+  appStore.startSync();
 
-    router.push('/orders');
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
-  } finally {
-    loading.value = false;
-  }
+  // Jalankan sinkronisasi di latar belakang
+  (async () => {
+    try {
+      if (navigator.onLine) {
+        await apiFetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': clientKey },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        await queueOfflineOrder({
+          ...payload,
+          customer_name: selectedCustomer.value?.name,
+          total_amount: totalOrder.value
+        });
+        await offlineStore.loadQueue();
+      }
+    } catch (err) {
+      console.error('[BACKGROUND ORDER SYNC ERROR]:', err);
+      appStore.showToast(`Gagal sync order: ${err.message}`, 'error');
+    } finally {
+      appStore.finishSync();
+    }
+  })();
+
+  // Langsung navigasi seketika (< 0.1 detik)
+  router.push('/orders');
+  loading.value = false;
 }
 
 // ==========================================

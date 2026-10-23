@@ -4,6 +4,17 @@ import { ref } from 'vue';
 export const useAppStore = defineStore('app', () => {
   const theme = ref(localStorage.getItem('theme') || 'light');
   const toasts = ref([]);
+  const activeSyncs = ref(0);
+
+  function startSync() {
+    activeSyncs.value += 1;
+  }
+
+  function finishSync() {
+    if (activeSyncs.value > 0) {
+      activeSyncs.value -= 1;
+    }
+  }
 
   function setTheme(newTheme) {
     theme.value = newTheme;
@@ -26,6 +37,9 @@ export const useAppStore = defineStore('app', () => {
   return {
     theme,
     toasts,
+    activeSyncs,
+    startSync,
+    finishSync,
     setTheme,
     toggleTheme,
     showToast
