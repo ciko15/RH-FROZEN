@@ -161,6 +161,14 @@ function updateSheetRow(sheetName, rowIndex, obj, headers) {
   sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
 }
 
+// Pastikan header kolom tertentu ada (untuk kolom baru yang ditambahkan belakangan)
+function ensureSheetHeader(sheetName, headerName, colIndex) {
+  const sheet = getSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) return;
+  const cell = sheet.getRange(1, colIndex);
+  if (cell.getValue() !== headerName) cell.setValue(headerName);
+}
+
 function getNextCounter(prefix) {
   const ss = getSpreadsheet();
   let sheet = ss.getSheetByName('Counters');
@@ -225,7 +233,7 @@ function setupDatabase() {
     Purchases: ['id', 'purchase_no', 'date', 'supplier_id', 'branch_id', 'total', 'note', 'user_id'],
     PurchaseItems: ['id', 'purchase_id', 'product_id', 'name', 'qty', 'cost_price'],
     Orders: ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'],
-    OrderItems: ['id', 'order_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price'],
+    OrderItems: ['id', 'order_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price', 'shortage'],
     Invoices: ['id', 'invoice_no', 'order_id', 'invoice_date', 'invoice_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by'],
     Payments: ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by'],
     Returns: ['id', 'return_no', 'invoice_id', 'customer_id', 'date', 'reason', 'total', 'user_id'],
@@ -572,9 +580,8 @@ function createOrder(payload) {
       }
 
       const currentStock = parseInt(product.stock, 10) || 0;
-      if (currentStock < qty) {
-        return { ok: false, error: 'OUT_OF_STOCK', message: `Stok barang ${product.name} tidak cukup (sisa: ${currentStock}, diminta: ${qty})` };
-      }
+      // Stok kurang tidak lagi menolak order; catat jumlah kekurangannya
+      const shortage = Math.max(0, qty - Math.max(currentStock, 0));
 
       // Tentukan harga: CustomerPrices > Products.price
       let itemPrice = parseFloat(product.price);
@@ -601,6 +608,7 @@ function createOrder(payload) {
         price: itemPrice,
         discount: discount,
         cost_price: parseFloat(product.cost_price || 0),
+        shortage: shortage,
         productRef: product
       });
     }
@@ -615,7 +623,7 @@ function createOrder(payload) {
 
     for (const vItem of validatedItems) {
       const p = vItem.productRef;
-      const newStock = (parseInt(p.stock, 10) || 0) - vItem.qty;
+      const newStock = Math.max(0, (parseInt(p.stock, 10) || 0) - vItem.qty);
       p.stock = newStock;
       updateSheetRow('Products', p._rowIndex, p, prodHeaders);
 
@@ -648,6 +656,7 @@ function createOrder(payload) {
     };
     appendSheetRow('Orders', newOrder, ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at']);
 
+    ensureSheetHeader('OrderItems', 'shortage', 9);
     for (const vItem of validatedItems) {
       appendSheetRow('OrderItems', {
         id: Utilities.getUuid(),
@@ -657,8 +666,9 @@ function createOrder(payload) {
         qty: vItem.qty,
         price: vItem.price,
         discount: vItem.discount,
-        cost_price: vItem.cost_price
-      }, ['id', 'order_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price']);
+        cost_price: vItem.cost_price,
+        shortage: vItem.shortage
+      }, ['id', 'order_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price', 'shortage']);
     }
 
     writeAuditLog(sales_id, 'CREATE_ORDER', { order_no: orderNo, order_id: newOrderId, customer: customer.name });

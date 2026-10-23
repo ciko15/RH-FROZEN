@@ -58,6 +58,7 @@ export default async function handler(req, res) {
           return {
             ...it,
             emoji: prod ? prod.emoji : '📦',
+            shortage: parseInt(it.shortage, 10) || 0,
             line_total: (parseInt(it.qty, 10) * parseFloat(it.price)) - parseFloat(it.discount || 0)
           };
         })

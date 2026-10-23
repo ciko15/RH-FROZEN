@@ -81,9 +81,8 @@
               v-for="p in dropdownFilteredProducts"
               :key="p.id"
               :value="p.id"
-              :disabled="parseInt(p.stock, 10) <= 0"
             >
-              {{ p.emoji || '📦' }} {{ p.name }} (Stok: {{ p.stock }}) - Rp {{ formatNumber(getCustomerPrice(p.id, p.price)) }} {{ parseInt(p.stock, 10) <= 0 ? ' [HABIS]' : '' }}
+              {{ p.emoji || '📦' }} {{ p.name }} (Stok: {{ p.stock }}) - Rp {{ formatNumber(getCustomerPrice(p.id, p.price)) }} {{ parseInt(p.stock, 10) <= 0 ? ' [HABIS - tetap bisa order]' : '' }}
             </option>
           </select>
           <button type="button" class="btn-browse-modal" @click="showItemSheet = true" title="Buka Daftar Visual Barang">
@@ -118,7 +117,6 @@
                 v-model.number="item.qty"
                 type="number"
                 min="1"
-                :max="item.stock"
                 inputmode="numeric"
                 :class="{ 'input-error': item.qty > item.stock || item.stock <= 0 }"
                 @input="calculateSubtotal(item)"
@@ -148,10 +146,7 @@
 
           <!-- Alert jika jumlah yang diminta melebihi sisa stok -->
           <div v-if="item.qty > item.stock" class="item-stock-alert">
-            ⚠️ Qty melebihi stok tersedia! Sisa stok hanya {{ item.stock }}.
-          </div>
-          <div v-else-if="item.stock <= 0" class="item-stock-alert">
-            ⚠️ Stok barang ini kosong (0)! Hapus dari pesanan untuk melanjutkan.
+            ⚠️ Stok kurang {{ item.qty - Math.max(item.stock, 0) }} (tersedia {{ Math.max(item.stock, 0) }}). Order tetap bisa disimpan.
           </div>
 
           <div class="item-footer">
@@ -586,20 +581,17 @@ function onCustomerChange() {
 
 function selectProduct(p) {
   const stock = parseInt(p.stock, 10) || 0;
-  if (stock <= 0) {
-    appStore.showToast(`Stok ${p.name} habis (0). Tidak dapat dipesan.`, 'warning');
-    return;
-  }
-
   const existing = form.value.items.find(it => it.product_id === p.id);
   if (existing) {
-    if (existing.qty < stock) {
-      existing.qty += 1;
-      calculateSubtotal(existing);
-    } else {
-      appStore.showToast(`Stok ${p.name} tidak mencukupi (sisa: ${stock})`, 'warning');
+    existing.qty += 1;
+    calculateSubtotal(existing);
+    if (existing.qty > stock) {
+      appStore.showToast(`Stok ${p.name} kurang ${existing.qty - Math.max(stock, 0)} (order tetap disimpan)`, 'warning');
     }
   } else {
+    if (stock <= 0) {
+      appStore.showToast(`Stok ${p.name} kosong, order tetap bisa disimpan`, 'warning');
+    }
     const unitPrice = getCustomerPrice(p.id, p.price);
     const newItem = {
       product_id: p.id,
@@ -679,13 +671,6 @@ async function handleSubmit() {
     return;
   }
 
-  // Validasi stok barang sebelum kirim
-  for (const it of form.value.items) {
-    if (it.qty > it.stock) {
-      appStore.showToast(`Stok ${it.name} tidak cukup (tersedia: ${it.stock}, diminta: ${it.qty})`, 'warning');
-      return;
-    }
-  }
 
   loading.value = true;
   const clientKey = crypto.randomUUID();
@@ -791,13 +776,6 @@ function openDirectPayModal() {
   if (form.value.items.length === 0) {
     appStore.showToast('Minimal pilih 1 barang', 'warning');
     return;
-  }
-  // Validasi stok
-  for (const it of form.value.items) {
-    if (it.qty > it.stock) {
-      appStore.showToast(`Stok ${it.name} tidak cukup (tersedia: ${it.stock}, diminta: ${it.qty})`, 'warning');
-      return;
-    }
   }
 
   directPayMethod.value = 'Tunai';

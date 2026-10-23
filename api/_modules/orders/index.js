@@ -68,12 +68,16 @@ export default async function handler(req, res) {
           return sum + (q * p - d);
         }, 0);
 
+        const shortageTotal = items.reduce((sum, it) => sum + (parseInt(it.shortage, 10) || 0), 0);
+
         return {
           ...o,
           customer_name: cust ? cust.name : '-',
           sales_name: sales ? sales.full_name : '-',
           total_amount: totalAmount,
-          items_count: items.length
+          items_count: items.length,
+          shortage_total: shortageTotal,
+          shortage_items: items.filter(it => (parseInt(it.shortage, 10) || 0) > 0).length
         };
       });
 

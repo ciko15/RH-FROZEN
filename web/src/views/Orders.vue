@@ -84,6 +84,9 @@
             </span>
           </div>
           <div class="order-cust">{{ order.customer_name }}</div>
+          <div v-if="order.shortage_total > 0" class="shortage-badge">
+            ⚠️ Stok kurang {{ order.shortage_total }} pcs ({{ order.shortage_items }} barang)
+          </div>
           <div class="order-bottom">
             <span class="order-date">{{ order.order_date }} {{ order.order_time }}</span>
             <span class="order-total">Rp {{ formatNumber(order.total_amount) }}</span>
@@ -181,6 +184,7 @@
                 <span class="item-name">{{ it.emoji }} {{ it.name }}</span>
                 <span class="item-calc">{{ it.qty }} x Rp {{ formatNumber(it.price) }}</span>
                 <small v-if="it.discount > 0" class="item-disc">Diskon: Rp {{ formatNumber(it.discount) }}</small>
+                <small v-if="it.shortage > 0" class="item-shortage">⚠️ Kurang {{ it.shortage }} dari {{ it.qty }} (tersedia {{ it.qty - it.shortage }})</small>
               </div>
               <span class="item-total">Rp {{ formatNumber(it.line_total) }}</span>
             </div>
@@ -738,6 +742,22 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-main);
+}
+.shortage-badge {
+  margin: 4px 0 6px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  display: inline-block;
+}
+.item-shortage {
+  color: #d97706;
+  font-weight: 600;
+  font-size: 11.5px;
 }
 .order-card {
   cursor: pointer;
