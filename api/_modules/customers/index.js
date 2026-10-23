@@ -35,17 +35,25 @@ export default async function handler(req, res) {
 
       // Filter Cabang untuk non-admin
       if (authUser.role !== 'admin' && authUser.branch_id) {
-        customers = customers.filter(c => c.branch_id === authUser.branch_id);
+        customers = customers.filter(c => !c.branch_id || c.branch_id === authUser.branch_id);
       }
 
-      // ISOLASI SALES: Sales hanya dapat melihat pelanggannya sendiri
+      // ISOLASI SALES: Sales melihat pelanggan miliknya (berdasarkan sales_id, kecocokan cabang, atau order)
       if (authUser.role === 'sales') {
         customers = customers.filter(c => {
-          // 1. Jika customer sudah punya sales_id langsung
-          if (c.sales_id) {
-            return c.sales_id === authUser.id;
+          // 1. Jika sales_id cocok langsung dengan authUser.id atau username sales
+          if (c.sales_id && (
+            c.sales_id === authUser.id || 
+            c.sales_id.toLowerCase().includes(authUser.username.toLowerCase()) ||
+            (authUser.branch_id && c.sales_id.toUpperCase().includes(authUser.branch_id.replace('BR-', '')))
+          )) {
+            return true;
           }
-          // 2. Fallback untuk data lama / transaksi lampau yang pernah dipesan sales ini
+          // 2. Jika sales_id kosong, tampilkan berdasarkan cabang yang sama
+          if (!c.sales_id && c.branch_id && c.branch_id === authUser.branch_id) {
+            return true;
+          }
+          // 3. Fallback jika pernah dipesan oleh sales ini
           const hasOrderFromThisSales = orders.some(o => o.customer_id === c.id && o.sales_id === authUser.id);
           return hasOrderFromThisSales;
         });
