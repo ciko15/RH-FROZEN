@@ -186,7 +186,7 @@ async function handleLogout() {
   if (!confirm('Apakah Anda yakin ingin keluar?')) return;
   await authStore.logout();
   appStore.showToast('Berhasil keluar', 'info');
-  window.location.href = '/login';
+  router.push('/login');
 }
 </script>
 

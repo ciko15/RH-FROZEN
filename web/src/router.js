@@ -145,12 +145,13 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore();
+  const isPublic = to.meta.public;
 
-  if (authStore.loading) {
+  // Hanya periksa status auth jika route butuh login dan belum pernah dicek
+  if (!isPublic && authStore.loading) {
     await authStore.checkAuth();
   }
 
-  const isPublic = to.meta.public;
   const isAuthenticated = authStore.isAuthenticated;
   const mustChange = authStore.user?.must_change_password;
 
