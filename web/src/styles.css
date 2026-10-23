@@ -453,3 +453,26 @@ input:focus, select:focus, textarea:focus {
   color: var(--primary);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
+
+/* Khusus Tampilan Layar HP / Mobile: Pagination Bar Rata Tengah */
+@media (max-width: 767px) {
+  .pagination-bar {
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+    text-align: center !important;
+    gap: 12px !important;
+  }
+
+  .pagination-bar .page-info {
+    width: 100% !important;
+    text-align: center !important;
+    display: block !important;
+  }
+
+  .pagination-bar .page-buttons {
+    width: 100% !important;
+    justify-content: center !important;
+    display: flex !important;
+  }
+}
