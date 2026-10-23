@@ -519,20 +519,40 @@ async function submitEditProduct() {
     return;
   }
 
-  editLoading.value = true;
+  const payload = { ...editForm.value };
+
+  // 1. Optimistic Update Instan: langsung update di state produk agar gambar dan data langsung tampil seketika
+  const idx = products.value.findIndex(p => p.id === payload.id);
+  if (idx !== -1) {
+    products.value[idx] = {
+      ...products.value[idx],
+      name: payload.name,
+      category: payload.category,
+      price: payload.price,
+      cost_price: payload.cost_price,
+      stock: payload.stock,
+      emoji: payload.emoji,
+      image: payload.image || ''
+    };
+  }
+
+  editProduct.value = null;
+  appStore.showToast('Data barang berhasil diperbarui!', 'success');
+  appStore.startSync();
+
   try {
     await apiFetch('/api/products', {
       method: 'PUT',
-      body: JSON.stringify(editForm.value)
+      body: JSON.stringify(payload)
     });
-
-    appStore.showToast('Data barang berhasil diperbarui!', 'success');
-    editProduct.value = null;
-    fetchProducts();
+    // Refresh quietly in background
+    const res = await apiFetch('/api/products');
+    if (res.data) products.value = res.data;
   } catch (err) {
     appStore.showToast(err.message, 'error');
+    fetchProducts();
   } finally {
-    editLoading.value = false;
+    appStore.finishSync();
   }
 }
 
@@ -561,44 +581,75 @@ async function submitAdjust() {
     return;
   }
 
-  adjustLoading.value = true;
+  const prodId = adjustProduct.value?.id;
+  const changeVal = adjustChange.value;
+  const reasonVal = adjustReason.value;
+  const noteVal = adjustNote.value;
+
+  // Optimistic stock update
+  if (prodId) {
+    const p = products.value.find(item => item.id === prodId);
+    if (p) p.stock = (p.stock || 0) + changeVal;
+  }
+
+  adjustProduct.value = null;
+  appStore.showToast('Stok berhasil diperbarui!', 'success');
+  appStore.startSync();
+
   try {
     await apiFetch('/api/products/stock', {
       method: 'POST',
       body: JSON.stringify({
-        product_id: adjustProduct.value.id,
-        change: adjustChange.value,
-        reason: adjustReason.value,
-        note: adjustNote.value
+        product_id: prodId,
+        change: changeVal,
+        reason: reasonVal,
+        note: noteVal
       })
     });
-
-    appStore.showToast('Stok berhasil diperbarui!', 'success');
-    adjustProduct.value = null;
-    fetchProducts();
+    const res = await apiFetch('/api/products');
+    if (res.data) products.value = res.data;
   } catch (err) {
     appStore.showToast(err.message, 'error');
+    fetchProducts();
   } finally {
-    adjustLoading.value = false;
+    appStore.finishSync();
   }
 }
 
 async function submitCreateProduct() {
-  createLoading.value = true;
+  const payload = { ...newProd.value };
+
+  // Optimistic add product
+  const tempId = 'PRD-' + Date.now().toString(36);
+  products.value.unshift({
+    id: tempId,
+    name: payload.name,
+    category: payload.category,
+    price: payload.price,
+    cost_price: payload.cost_price,
+    stock: payload.stock,
+    emoji: payload.emoji,
+    image: payload.image || '',
+    active: true
+  });
+
+  showAddModal.value = false;
+  newProd.value = { name: '', category: 'Frozen Food', price: 0, cost_price: 0, stock: 0, emoji: '📦', image: '' };
+  appStore.showToast('Barang baru berhasil disimpan!', 'success');
+  appStore.startSync();
+
   try {
     await apiFetch('/api/products', {
       method: 'POST',
-      body: JSON.stringify(newProd.value)
+      body: JSON.stringify(payload)
     });
-
-    appStore.showToast('Barang baru berhasil disimpan!', 'success');
-    showAddModal.value = false;
-    newProd.value = { name: '', category: 'Frozen Food', price: 0, cost_price: 0, stock: 0, emoji: '📦', image: '' };
-    fetchProducts();
+    const res = await apiFetch('/api/products');
+    if (res.data) products.value = res.data;
   } catch (err) {
     appStore.showToast(err.message, 'error');
+    fetchProducts();
   } finally {
-    createLoading.value = false;
+    appStore.finishSync();
   }
 }
 

@@ -83,15 +83,33 @@ function parseCsvToObjects(text) {
 async function fetchTabRowsFromGoogle(tabName) {
   if (!SPREADSHEET_ID) return null;
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
+    const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tabName)}&t=${Date.now()}`;
     const res = await fetch(url);
     if (!res.ok) return null;
     const text = await res.text();
-    // Jika response HTML error google docs
-    if (text.includes('<!DOCTYPE html>') || text.includes('google.visualization.Query.setResponse')) {
-      return null;
+    if (!text.includes('{') || !text.includes('}')) return null;
+    const jsonStr = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+    const data = JSON.parse(jsonStr);
+    if (!data.table || !data.table.cols || !data.table.rows) return null;
+
+    const headers = data.table.cols.map(c => (c && c.label ? c.label : '').trim());
+    const rows = [];
+    for (let r = 0; r < data.table.rows.length; r++) {
+      const rowCells = data.table.rows[r]?.c || [];
+      const item = { _rowIndex: r + 2 };
+      for (let c = 0; c < headers.length; c++) {
+        const header = headers[c];
+        if (!header) continue;
+        const cell = rowCells[c];
+        let val = '';
+        if (cell && cell.v !== undefined && cell.v !== null) {
+          val = cell.v;
+        }
+        item[header] = desanitizeText(val);
+      }
+      rows.push(item);
     }
-    return parseCsvToObjects(text);
+    return rows;
   } catch (err) {
     console.error(`[LIVE SHEETS ERROR] Gagal membaca tab ${tabName} dari Google Spreadsheet:`, err.message);
     return null;
