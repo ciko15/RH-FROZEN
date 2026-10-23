@@ -1,7 +1,7 @@
-import { authenticate } from '../../../_lib/auth.js';
-import { requireRole } from '../../../_lib/rbac.js';
-import { callGas } from '../../../_lib/gas.js';
-import { handleApiError, ApiError } from '../../../_lib/errors.js';
+import { authenticate } from '../../_lib/auth.js';
+import { requireRole } from '../../_lib/rbac.js';
+import { callGas } from '../../_lib/gas.js';
+import { handleApiError, ApiError } from '../../_lib/errors.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     } catch (gasErr) {
       console.warn('[GAS SHIP FALLBACK] Memproses pengiriman via Sheets langsung:', gasErr.message);
       // Fallback langsung ke Google Sheets
-      const { getTabRows, updateRow } = await import('../../../_lib/sheets.js');
+      const { getTabRows, updateRow } = await import('../../_lib/sheets.js');
       const orders = await getTabRows('Orders');
       const order = orders.find(o => o.id === orderId);
       if (!order) {
