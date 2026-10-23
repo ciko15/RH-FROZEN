@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "server": "node scripts/dev-server.mjs",
-    "build": "vite build",
+    "build": "vite build && node -e \"process.exit(0)\"",
     "preview": "vite preview",
     "make-icons": "node scripts/make-icons.mjs",
     "create-admin": "node scripts/create-admin.mjs"
@@ -20,6 +20,7 @@
     "idb": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "pinia": "^2.1.7",
+    "uuid": "^14.0.3",
     "vue": "^3.4.21",
     "vue-router": "^4.3.0",
     "zod": "^3.22.4"
