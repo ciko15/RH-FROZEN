@@ -1,21 +1,28 @@
 <template>
   <div class="sales-page">
-    <!-- Header Tab Penjualan -->
-    <div class="sales-tabs">
-      <button
-        class="tab-btn"
-        :class="{ active: activeTab === 'waiting' }"
-        @click="activeTab = 'waiting'"
-      >
-        Menunggu Pembayaran ({{ waitingOrders.length }})
-      </button>
-      <button
-        class="tab-btn"
-        :class="{ active: activeTab === 'completed' }"
-        @click="activeTab = 'completed'"
-      >
-        Penjualan Selesai
-      </button>
+    <!-- Header Bar Penjualan & Kasir -->
+    <div class="sales-header">
+      <div class="sales-tabs">
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'waiting' }"
+          @click="activeTab = 'waiting'"
+        >
+          Menunggu Pembayaran ({{ waitingOrders.length }})
+        </button>
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'completed' }"
+          @click="activeTab = 'completed'"
+        >
+          Penjualan Selesai
+        </button>
+      </div>
+
+      <router-link to="/orders/new" class="btn-new-sale">
+        <Icon name="plus" size="18" />
+        <span>+ Transaksi Kasir Baru</span>
+      </router-link>
     </div>
 
     <!-- Tab 1: Menunggu Pembayaran -->
@@ -336,10 +343,37 @@ onMounted(() => {
   padding: 16px;
   padding-bottom: 90px;
 }
+.sales-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
 .sales-tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 14px;
+  flex: 1;
+  min-width: 280px;
+}
+.btn-new-sale {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--primary, #0284c7);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: var(--radius-btn, 8px);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
+  transition: transform 0.15s, opacity 0.15s;
+}
+.btn-new-sale:hover {
+  opacity: 0.95;
+  transform: translateY(-1px);
 }
 .tab-btn {
   flex: 1;
