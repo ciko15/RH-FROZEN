@@ -53,11 +53,14 @@
         </div>
 
         <div class="cust-actions">
-          <button class="btn-edit-cust" @click="openEditModal(c)">
-            <Icon name="edit" size="13" /> Edit Data
+          <button class="btn-edit-cust" @click="openEditModal(c)" title="Edit data pelanggan">
+            <Icon name="edit" size="13" /> Edit
           </button>
-          <button class="btn-price" @click="openPricesModal(c)">
-            <Icon name="tag" size="13" /> Atur Harga Khusus
+          <button class="btn-price" @click="openPricesModal(c)" title="Atur harga khusus">
+            <Icon name="tag" size="13" /> Harga Khusus
+          </button>
+          <button class="btn-delete-cust" @click="confirmDeleteCustomer(c)" title="Hapus pelanggan">
+            <Icon name="trash" size="13" /> Hapus
           </button>
         </div>
       </div>
@@ -370,20 +373,73 @@ async function fetchSalesList() {
 }
 
 async function submitCreateCustomer() {
-  createLoading.value = true;
+  if (!newCust.value.name || !newCust.value.name.trim()) {
+    appStore.showToast('Nama pelanggan wajib diisi', 'warning');
+    return;
+  }
+
+  // 1. INSTAN: Langsung masukkan data ke tampilan tanpa perlu menunggu Google Apps Script
+  const tempId = 'temp-' + Date.now();
+  const addedItem = {
+    id: tempId,
+    name: newCust.value.name.trim(),
+    address: newCust.value.address || '',
+    phone: newCust.value.phone || '',
+    branch_id: newCust.value.branch_id || user.value?.branch_id || 'BR-KERTEK',
+    sales_id: user.value?.role === 'sales' ? user.value.id : (newCust.value.sales_id || user.value?.id || ''),
+    sales_name: user.value?.full_name || '',
+    balance: 0,
+    credit_limit: parseFloat(newCust.value.credit_limit || 0),
+    term_days: parseInt(newCust.value.term_days || 14, 10),
+    active: true
+  };
+
+  // Langsung tampilkan di kartu paling atas
+  customers.value.unshift(addedItem);
+  showAddModal.value = false;
+  appStore.showToast('Pelanggan berhasil ditambahkan!', 'success');
+
+  const payloadToSend = { ...newCust.value };
+  newCust.value = { name: '', address: '', phone: '', branch_id: branches.value[0]?.id || '', sales_id: '', credit_limit: 0, term_days: 14 };
+
+  // 2. DI BALIK LAYAR: Simpan ke Google Sheet secara asinkron
+  apiFetch('/api/customers', {
+    method: 'POST',
+    body: JSON.stringify(payloadToSend)
+  }).then(res => {
+    // Ganti tempId dengan ID asli dari server
+    if (res?.data?.id) {
+      const idx = customers.value.findIndex(c => c.id === tempId);
+      if (idx !== -1) {
+        customers.value[idx].id = res.data.id;
+      }
+    }
+  }).catch(err => {
+    console.error('[SYNC CUSTOMER ERROR]', err);
+    appStore.showToast('Gagal sinkron ke database: ' + err.message, 'error');
+    // Rollback jika server gagal
+    customers.value = customers.value.filter(c => c.id !== tempId);
+  });
+}
+
+async function confirmDeleteCustomer(c) {
+  const confirmed = window.confirm(`Apakah Anda yakin ingin menghapus pelanggan "${c.name}"?`);
+  if (!confirmed) return;
+
+  // 1. INSTAN: Langsung hilangkan dari tampilan
+  const prevList = [...customers.value];
+  customers.value = customers.value.filter(item => item.id !== c.id);
+  appStore.showToast(`Pelanggan "${c.name}" berhasil dihapus`, 'info');
+
+  // 2. DI BALIK LAYAR: Hapus di server
   try {
-    await apiFetch('/api/customers', {
-      method: 'POST',
-      body: JSON.stringify(newCust.value)
+    await apiFetch(`/api/customers?id=${encodeURIComponent(c.id)}`, {
+      method: 'DELETE'
     });
-    appStore.showToast('Pelanggan berhasil ditambahkan!', 'success');
-    showAddModal.value = false;
-    newCust.value = { name: '', address: '', phone: '', branch_id: branches.value[0]?.id || '', sales_id: '', credit_limit: 0, term_days: 14 };
-    fetchCustomers();
   } catch (err) {
-    appStore.showToast(err.message, 'error');
-  } finally {
-    createLoading.value = false;
+    console.error('[DELETE CUSTOMER ERROR]', err);
+    appStore.showToast('Gagal menghapus di database: ' + err.message, 'error');
+    customers.value = prevList; // rollback jika gagal
   }
 }
 
@@ -540,49 +596,70 @@ onMounted(() => {
   font-size: 12px;
 }
 .cust-actions {
-  margin-top: 8px;
+  margin-top: 10px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr auto;
   gap: 8px;
+  align-items: center;
 }
 .btn-edit-cust {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--bg-hover);
-  border: 1px solid var(--border-color);
-  color: var(--text-main);
+  background: var(--bg-hover, #f1f5f9);
+  border: 1px solid var(--border-color, #e2e8f0);
+  color: var(--text-main, #1e293b);
   font-size: 12px;
   font-weight: 600;
-  padding: 6px 10px;
-  min-height: 34px;
-  border-radius: var(--radius-btn);
+  padding: 7px 12px;
+  min-height: 36px;
+  border-radius: var(--radius-btn, 8px);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .btn-edit-cust:hover {
-  background: var(--border-color);
-  color: var(--primary);
+  background: #e2e8f0;
+  color: var(--primary, #0284c7);
 }
 .btn-price {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: #f1f5f9;
-  border: 1px solid var(--border-color);
-  color: var(--primary);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #16a34a;
   font-size: 12px;
   font-weight: 600;
-  padding: 6px 10px;
-  min-height: 34px;
-  border-radius: var(--radius-btn);
+  padding: 7px 12px;
+  min-height: 36px;
+  border-radius: var(--radius-btn, 8px);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .btn-price:hover {
-  background: #e2e8f0;
+  background: #dcfce7;
+}
+.btn-delete-cust {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  min-height: 36px;
+  border-radius: var(--radius-btn, 8px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-delete-cust:hover {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 /* Modals styling uses global styles.css (.sheet-overlay, .sheet-content, .sheet-head, .sheet-footer) */

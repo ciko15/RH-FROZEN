@@ -169,6 +169,49 @@ export default async function handler(req, res) {
       });
     }
 
+    // ==========================================
+    // DELETE: Hapus / Nonaktifkan Pelanggan
+    // ==========================================
+    if (req.method === 'DELETE') {
+      requireRole(authUser, ['admin', 'manajer', 'sales']);
+      const id = req.query.id;
+      if (!id) {
+        throw new ApiError(400, 'ID_REQUIRED', 'ID pelanggan wajib disertakan');
+      }
+
+      const tabs = await getTabsBatch(['Customers', 'Orders']);
+      const customers = tabs.Customers || [];
+      const orders = tabs.Orders || [];
+      const cust = customers.find(c => c.id === id);
+
+      if (!cust) {
+        throw new ApiError(404, 'CUSTOMER_NOT_FOUND', 'Pelanggan tidak ditemukan');
+      }
+
+      // Validasi hak akses Sales
+      if (authUser.role === 'sales') {
+        const isOwner = cust.sales_id === authUser.id;
+        const hasOrder = orders.some(o => o.customer_id === cust.id && o.sales_id === authUser.id);
+        if (!isOwner && !hasOrder) {
+          throw new ApiError(403, 'FORBIDDEN', 'Anda hanya diizinkan menghapus pelanggan Anda sendiri');
+        }
+      }
+
+      // Tandai active FALSE
+      const updatedCust = {
+        ...cust,
+        active: 'FALSE'
+      };
+
+      await updateRow('Customers', cust._rowIndex, updatedCust, CUST_HEADERS);
+      await logAudit(authUser.id, 'DELETE_CUSTOMER', { id: cust.id, name: cust.name });
+
+      return res.status(200).json({
+        ok: true,
+        message: 'Pelanggan berhasil dihapus'
+      });
+    }
+
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED', message: 'Metode tidak didukung' });
   } catch (err) {
     return handleApiError(res, err);
