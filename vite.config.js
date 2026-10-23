@@ -40,7 +40,7 @@ export default defineConfig(({ command, mode }) => ({
     vue(),
     command === 'serve' ? backendServerPlugin() : null,
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
       manifest: {
         name: 'Sales Terpadu',
