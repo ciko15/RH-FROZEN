@@ -1,8 +1,8 @@
 import { ApiError } from './errors.js';
 import { clearCache } from './cache.js';
 
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
-const APPS_SCRIPT_SECRET = process.env.APPS_SCRIPT_SECRET;
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbzfHrbey6APjbgAqxSHqcWOCSX48fg0S6wUMl6WF-6vyE_txbTQc9kXTBIL6GFv12kV/exec';
+const APPS_SCRIPT_SECRET = process.env.APPS_SCRIPT_SECRET || 'rh_frozen_secret_app_key_2026_secure';
 
 /**
  * Memanggil fungsi transaksi atomik di Google Apps Script Web App
