@@ -11,7 +11,7 @@ const customerSchema = z.object({
   name: z.string().min(1, 'Nama pelanggan wajib diisi'),
   address: z.string().optional().default(''),
   phone: z.string().optional().default(''),
-  branch_id: z.string().min(1, 'Cabang wajib dipilih'),
+  branch_id: z.string().optional().default(''),
   sales_id: z.string().optional(),
   credit_limit: z.number().min(0, 'Batas kredit tidak boleh negatif').optional().default(0),
   term_days: z.number().int().min(1, 'Jatuh tempo minimal 1 hari').optional().default(14),
@@ -90,7 +90,7 @@ export default async function handler(req, res) {
       requireRole(authUser, ['admin', 'manajer', 'sales']);
       const data = validateBody(customerSchema, req.body);
 
-      const branchId = authUser.role === 'admin' ? (data.branch_id || 'BR-SOLO') : (authUser.branch_id || data.branch_id || 'BR-SOLO');
+      const branchId = data.branch_id || authUser.branch_id || 'BR-KERTEK';
       const salesId = authUser.role === 'sales' ? authUser.id : (data.sales_id || authUser.id);
       const newId = crypto.randomUUID();
 
