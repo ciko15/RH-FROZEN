@@ -164,22 +164,36 @@
       </div>
     </div>
 
-    <!-- Total & Simpan -->
+    <!-- Total & Tombol Aksi Simpan / Bayar Langsung -->
     <div class="summary-card card">
       <div class="total-row">
         <span>Total Pesanan:</span>
         <span class="total-amount">Rp {{ formatNumber(totalOrder) }}</span>
       </div>
 
-      <button
-        type="button"
-        class="btn-submit"
-        @click="handleSubmit"
-        :disabled="loading || form.items.length === 0"
-      >
-        <Icon name="check" size="18" v-if="!loading" />
-        <span>{{ loading ? 'Menyimpan Pesanan...' : 'Simpan Order' }}</span>
-      </button>
+      <div class="summary-actions">
+        <!-- Tombol Bayar Langsung (Kasir / Checkout Langsung) -->
+        <button
+          type="button"
+          class="btn-pay-direct"
+          @click="openDirectPayModal"
+          :disabled="loading || form.items.length === 0"
+        >
+          <Icon name="dollar-sign" size="18" />
+          <span>Bayar Langsung (Kasir)</span>
+        </button>
+
+        <!-- Tombol Simpan Order Biasa (Tanpa Bayar Sekarang) -->
+        <button
+          type="button"
+          class="btn-submit-order"
+          @click="handleSubmit"
+          :disabled="loading || form.items.length === 0"
+        >
+          <Icon name="check" size="18" v-if="!loading" />
+          <span>{{ loading ? 'Menyimpan...' : 'Simpan Order Saja' }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- Bottom Sheet Pemilihan Barang -->
@@ -284,6 +298,108 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Bayar Langsung (Kasir) & Cicilan / Sebagian -->
+    <div v-if="showDirectPayModal" class="sheet-overlay" @click.self="showDirectPayModal = false">
+      <div class="sheet-content">
+        <div class="sheet-head">
+          <h3>Pembayaran Langsung (Kasir)</h3>
+          <button class="sheet-close" @click="showDirectPayModal = false">
+            <Icon name="x" size="18" />
+          </button>
+        </div>
+
+        <div class="sheet-body">
+          <!-- Rincian Total Belanja & Bon Sebelumnya -->
+          <div class="calc-box">
+            <div class="calc-row">
+              <span>Total Belanja Sekarang:</span>
+              <strong>Rp {{ formatNumber(totalOrder) }}</strong>
+            </div>
+            <div class="calc-row">
+              <span>Hutang/Bon Sebelumnya:</span>
+              <strong>Rp {{ formatNumber(customerPreviousBalance) }}</strong>
+            </div>
+            <div class="calc-row total-row-calc">
+              <span>Total Keseluruhan Tagihan:</span>
+              <strong class="total-big-calc">Rp {{ formatNumber(directPayTotalDue) }}</strong>
+            </div>
+          </div>
+
+          <!-- Opsi Metode Pembayaran -->
+          <div class="form-group">
+            <label>Metode Pembayaran *</label>
+            <select v-model="directPayMethod" @change="onDirectPayMethodChange">
+              <option value="Tunai">Tunai</option>
+              <option value="Transfer">Transfer Bank</option>
+              <option value="Tempo">Tempo (Bayar Nanti Penuh)</option>
+            </select>
+          </div>
+
+          <!-- Input Jumlah Bayar -->
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label>Jumlah Bayar (Rp) *</label>
+              <span style="font-size:11px; color:var(--text-muted);">Bisa bayar penuh atau sebagian (cicil)</span>
+            </div>
+            <input
+              v-model.number="directPaidAmount"
+              type="number"
+              min="0"
+              :max="directPayTotalDue"
+              inputmode="numeric"
+              :disabled="directPayMethod === 'Tempo'"
+              placeholder="0"
+            />
+            <!-- Quick Preset Buttons -->
+            <div class="quick-pay-presets" v-if="directPayMethod !== 'Tempo'">
+              <button type="button" class="btn-preset" @click="directPaidAmount = directPayTotalDue">Bayar Lunas (100%)</button>
+              <button type="button" class="btn-preset" @click="directPaidAmount = Math.round(directPayTotalDue / 2)">Bayar 50%</button>
+              <button type="button" class="btn-preset" @click="directPaidAmount = 0">Bayar Nanti (Rp 0)</button>
+            </div>
+          </div>
+
+          <!-- Sisa Tagihan / Hutang Berikutnya Real-time -->
+          <div class="balance-preview-box" :class="directPayRemaining <= 0 ? 'lunas-box' : 'tempo-box'">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span>{{ directPayRemaining <= 0 ? 'Status Pembayaran:' : 'Sisa Tagihan / Hutang Berikutnya:' }}</span>
+              <span class="badge" :class="directPayRemaining <= 0 ? 'badge-dikirim' : 'badge-dibatalkan'">
+                {{ directPayRemaining <= 0 ? 'LUNAS' : (directPaidAmount > 0 ? 'SEBAGIAN / CICIL' : 'TEMPO / BELUM BAYAR') }}
+              </span>
+            </div>
+            <strong class="bal-huge">Rp {{ formatNumber(directPayRemaining) }}</strong>
+            <small v-if="directPayRemaining > 0" style="font-size:11px; opacity:0.85; display:block; margin-top:4px;">
+              * Sisa Rp {{ formatNumber(directPayRemaining) }} akan otomatis tersimpan sebagai piutang pelanggan untuk pembayaran berikutnya.
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label>Catatan Pembayaran (Opsional)</label>
+            <input v-model="directPayNote" type="text" placeholder="Contoh: Titip tunai / Transfer Mandiri" />
+          </div>
+
+          <button
+            type="button"
+            class="btn-save-and-pay"
+            @click="submitDirectPay"
+            :disabled="directPayLoading || directPaidAmount > directPayTotalDue"
+          >
+            <Icon name="check" size="18" v-if="!directPayLoading" />
+            <span>{{ directPayLoading ? 'Memproses Pesanan & Bayar...' : '✓ Selesaikan Pesanan & Terbitkan Invoice' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Pratinjau Invoice Hasil Bayar Langsung -->
+    <div v-if="completedInvoice" class="sheet-overlay" @click.self="finishAndCloseInvoice">
+      <div class="sheet-content sheet-inv">
+        <div class="sheet-close-bar">
+          <button class="sheet-close" @click="finishAndCloseInvoice"><Icon name="x" size="16" /> Selesai & Kembali</button>
+        </div>
+        <InvoiceView :invoice="completedInvoice" />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -296,6 +412,7 @@ import { useAppStore } from '../stores/app.js';
 import { useOfflineStore } from '../stores/offline.js';
 import { cacheCustomers, cacheProducts, getCachedCustomers, getCachedProducts, queueOfflineOrder } from '../db.js';
 import Icon from '../components/Icon.vue';
+import InvoiceView from '../components/InvoiceView.vue';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -614,6 +731,135 @@ async function handleSubmit() {
   }
 }
 
+// ==========================================
+// State & Logika Bayar Langsung (Kasir / Checkout Langsung)
+// ==========================================
+const showDirectPayModal = ref(false);
+const directPayLoading = ref(false);
+const directPayMethod = ref('Tunai');
+const directPaidAmount = ref(0);
+const directPayNote = ref('');
+const completedInvoice = ref(null);
+
+const customerPreviousBalance = computed(() => {
+  return selectedCustomer.value ? parseFloat(selectedCustomer.value.balance || 0) : 0;
+});
+
+const directPayTotalDue = computed(() => {
+  return totalOrder.value + customerPreviousBalance.value;
+});
+
+const directPayRemaining = computed(() => {
+  const rem = directPayTotalDue.value - (directPaidAmount.value || 0);
+  return Math.max(rem, 0);
+});
+
+function onDirectPayMethodChange() {
+  if (directPayMethod.value === 'Tempo') {
+    directPaidAmount.value = 0;
+  } else {
+    directPaidAmount.value = directPayTotalDue.value;
+  }
+}
+
+function openDirectPayModal() {
+  if (!form.value.customer_id) {
+    appStore.showToast('Silakan pilih pelanggan terlebih dahulu', 'warning');
+    return;
+  }
+  if (form.value.items.length === 0) {
+    appStore.showToast('Minimal pilih 1 barang', 'warning');
+    return;
+  }
+  // Validasi stok
+  for (const it of form.value.items) {
+    if (it.qty > it.stock) {
+      appStore.showToast(`Stok ${it.name} tidak cukup (tersedia: ${it.stock}, diminta: ${it.qty})`, 'warning');
+      return;
+    }
+  }
+
+  directPayMethod.value = 'Tunai';
+  directPaidAmount.value = directPayTotalDue.value; // Default lunas, bisa diubah sebagian
+  directPayNote.value = '';
+  showDirectPayModal.value = true;
+}
+
+async function submitDirectPay() {
+  if (!navigator.onLine) {
+    appStore.showToast('Pembayaran langsung membutuhkan koneksi online', 'warning');
+    return;
+  }
+
+  if (directPaidAmount.value > directPayTotalDue.value) {
+    appStore.showToast('Jumlah bayar tidak boleh melebihi total tagihan', 'warning');
+    return;
+  }
+
+  directPayLoading.value = true;
+  const clientKey = crypto.randomUUID();
+
+  try {
+    // 1. Simpan Order
+    const orderPayload = {
+      customer_id: form.value.customer_id,
+      order_date: form.value.order_date,
+      note: form.value.note,
+      client_key: clientKey,
+      items: form.value.items.map(it => ({
+        product_id: it.product_id,
+        qty: it.qty,
+        discount: it.discount || 0
+      }))
+    };
+
+    const resOrder = await apiFetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': clientKey },
+      body: JSON.stringify(orderPayload)
+    });
+
+    const createdOrder = resOrder.data;
+    if (!createdOrder || !createdOrder.id) {
+      throw new Error('Gagal mendapatkan ID order baru');
+    }
+
+    // 2. Terbitkan Invoice & Catat Pembayaran Sekaligus
+    const invIdempotency = crypto.randomUUID();
+    const resInvoice = await apiFetch('/api/invoices', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': invIdempotency },
+      body: JSON.stringify({
+        order_id: createdOrder.id,
+        pay_method: directPayMethod.value,
+        paid_amount: directPaidAmount.value,
+        note: directPayNote.value
+      })
+    });
+
+    appStore.showToast('Order & Pembayaran berhasil diproses!', 'success');
+    showDirectPayModal.value = false;
+
+    // 3. Tampilkan InvoiceView lengkap untuk langsung cetak / kirim foto / WA
+    try {
+      const resFullInv = await apiFetch(`/api/invoices/${resInvoice.data.id}`);
+      completedInvoice.value = resFullInv.data;
+    } catch (e) {
+      completedInvoice.value = resInvoice.data;
+    }
+
+  } catch (err) {
+    appStore.showToast(err.message || 'Gagal memproses pembayaran langsung', 'error');
+  } finally {
+    directPayLoading.value = false;
+  }
+}
+
+function finishAndCloseInvoice() {
+  completedInvoice.value = null;
+  router.push('/sales');
+}
+
 function formatNumber(num) {
   return (num || 0).toLocaleString('id-ID');
 }
@@ -748,11 +994,134 @@ label {
   font-size: 20px;
   color: var(--primary);
 }
-.btn-submit {
+.summary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.btn-pay-direct {
+  background: var(--primary);
+  color: white;
+  width: 100%;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+  cursor: pointer;
+  border: none;
+}
+.btn-pay-direct:hover:not(:disabled) {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+.btn-submit-order {
+  background: var(--bg-app);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.btn-submit-order:hover:not(:disabled) {
+  background: var(--border-color);
+}
+.calc-box {
+  background: var(--bg-app);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.calc-row {
+  display: flex;
+  justify-content: space-between;
+}
+.total-row-calc {
+  border-top: 1px dashed var(--border-color);
+  padding-top: 6px;
+  font-size: 15px;
+}
+.total-big-calc {
+  color: var(--primary);
+  font-size: 18px;
+}
+.quick-pay-presets {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.btn-preset {
+  flex: 1;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+.btn-preset:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.balance-preview-box {
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+}
+.lunas-box {
+  background: #dcfce7;
+  color: #15803d;
+}
+.tempo-box {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.bal-huge {
+  font-size: 20px;
+  font-weight: 800;
+}
+.btn-save-and-pay {
   background: var(--success);
   color: white;
   width: 100%;
-  font-size: 16px;
+  min-height: 44px;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.sheet-inv {
+  max-width: 540px !important;
+}
+.sheet-close-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 
 /* Bottom Sheet Product Picker */

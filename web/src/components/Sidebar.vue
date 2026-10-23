@@ -29,10 +29,13 @@
           <div class="icon-box"><Icon name="stock" size="18" class="nav-svg" /></div>
           <span class="label">Stok Produk</span>
         </router-link>
+        <!-- Menu PO di-hide sementara sesuai permintaan user -->
+        <!--
         <router-link to="/purchases" class="sidebar-link" active-class="active" v-if="canManageData">
           <div class="icon-box"><Icon name="purchases" size="18" class="nav-svg" /></div>
           <span class="label">Pembelian (PO)</span>
         </router-link>
+        -->
       </nav>
 
       <div class="nav-section-title">Keuangan & Analitik</div>

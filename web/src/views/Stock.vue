@@ -26,6 +26,7 @@
       >
         Opname
       </router-link>
+      <!-- Tombol Beli PO disembunyikan sementara
       <router-link
         v-if="canManageStock"
         to="/purchases"
@@ -33,6 +34,7 @@
       >
         Beli
       </router-link>
+      -->
     </div>
 
     <!-- Filter Kategori -->

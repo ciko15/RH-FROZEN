@@ -70,7 +70,10 @@
           </div>
 
           <div class="form-group">
-            <label>Jumlah Bayar (Rp) *</label>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label>Jumlah Bayar (Rp) *</label>
+              <span style="font-size:11px; color:var(--text-muted);">Bisa bayar cicil atau penuh</span>
+            </div>
             <input
               v-model.number="payAmount"
               type="number"
@@ -78,6 +81,10 @@
               :max="selectedDebtor.balance"
               inputmode="numeric"
             />
+            <div class="quick-pay-presets">
+              <button type="button" class="btn-preset" @click="payAmount = selectedDebtor.balance">Bayar Lunas (100%)</button>
+              <button type="button" class="btn-preset" @click="payAmount = Math.round(selectedDebtor.balance / 2)">Bayar 50%</button>
+            </div>
           </div>
 
           <div class="form-group">
@@ -332,6 +339,28 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.quick-pay-presets {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.btn-preset {
+  flex: 1;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+.btn-preset:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
 }
 .btn-submit {
   background: var(--success);

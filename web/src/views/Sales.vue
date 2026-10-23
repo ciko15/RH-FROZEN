@@ -114,7 +114,10 @@
           </div>
 
           <div class="form-group">
-            <label>Jumlah Bayar (Rp)</label>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label>Jumlah Bayar (Rp)</label>
+              <span style="font-size:11px; color:var(--text-muted);">Bisa bayar penuh atau sebagian (cicil)</span>
+            </div>
             <input
               v-model.number="paidAmount"
               type="number"
@@ -122,13 +125,28 @@
               :max="payTotalDue"
               inputmode="numeric"
               :disabled="payMethod === 'Tempo'"
+              placeholder="0"
             />
+            <!-- Quick preset buttons -->
+            <div class="quick-pay-presets" v-if="payMethod !== 'Tempo'">
+              <button type="button" class="btn-preset" @click="paidAmount = payTotalDue">Bayar Lunas (100%)</button>
+              <button type="button" class="btn-preset" @click="paidAmount = Math.round(payTotalDue / 2)">Bayar 50%</button>
+              <button type="button" class="btn-preset" @click="paidAmount = 0">Bayar Nanti (Rp 0)</button>
+            </div>
           </div>
 
-          <!-- Sisa Hutang Real-time -->
+          <!-- Sisa Tagihan / Hutang Berikutnya Real-time -->
           <div class="balance-preview" :class="payRemaining <= 0 ? 'lunas-box' : 'tempo-box'">
-            <span>Sisa kekurangan / hutang:</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span>{{ payRemaining <= 0 ? 'Status Pembayaran:' : 'Sisa Tagihan / Hutang Berikutnya:' }}</span>
+              <span class="badge" :class="payRemaining <= 0 ? 'badge-dikirim' : 'badge-dibatalkan'">
+                {{ payRemaining <= 0 ? 'LUNAS' : (paidAmount > 0 ? 'SEBAGIAN / CICIL' : 'TEMPO / BELUM BAYAR') }}
+              </span>
+            </div>
             <strong class="bal-huge">Rp {{ formatNumber(payRemaining) }}</strong>
+            <small v-if="payRemaining > 0" style="font-size:11px; opacity:0.85; display:block; margin-top:4px;">
+              * Sisa Rp {{ formatNumber(payRemaining) }} akan otomatis tercatat ke buku piutang pelanggan untuk pembayaran berikutnya.
+            </small>
           </div>
 
           <div class="form-group">
@@ -461,8 +479,7 @@ onMounted(() => {
   padding: 12px;
   border-radius: 8px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
 }
 .lunas-box {
   background: #dcfce7;
@@ -475,6 +492,28 @@ onMounted(() => {
 .bal-huge {
   font-size: 20px;
   font-weight: 800;
+}
+.quick-pay-presets {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.btn-preset {
+  flex: 1;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+.btn-preset:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
 }
 .form-group {
   display: flex;
