@@ -1,0 +1,8 @@
+id	username	full_name	role	branch_id	password_hash	active	must_change_password	token_version	failed_count	locked_until	created_at	last_login_at
+USR-ADMIN-01	admin	Administrator RH Frozen	admin		$2a$10$0NtiL1b6DrAeEFdFB2YuWuI1IHwFAmqMSpQMClRA78jluOh91Y4TW	TRUE	FALSE	1	0		2026-10-21T04:08:08.393Z	
+USR-SLS-BANJAR	sales_banjar	Mihrom (Sales Banjarnegara)	sales	BR-BANJAR	$2a$10$0NtiL1b6DrAeEFdFB2YuWuI1IHwFAmqMSpQMClRA78jluOh91Y4TW	TRUE	FALSE	1	0		2026-10-21T04:08:08.393Z	
+USR-SLS-PWT	sales_purwokerto	Tefri (Sales Purwokerto)	sales	BR-PURWOKERTO	$2a$10$0NtiL1b6DrAeEFdFB2YuWuI1IHwFAmqMSpQMClRA78jluOh91Y4TW	TRUE	FALSE	1	0		2026-10-21T04:08:08.393Z	
+USR-SLS-MDR	sales_mandiraja	Eka (Sales Mandiraja)	sales	BR-MANDIRAJA	$2a$10$0NtiL1b6DrAeEFdFB2YuWuI1IHwFAmqMSpQMClRA78jluOh91Y4TW	TRUE	FALSE	1	0		2026-10-21T04:08:08.393Z	
+USR-SLS-WSB	sales_wonosobo	Yakub (Sales Wonosobo)	sales	BR-WONOSOBO	$2a$10$0NtiL1b6DrAeEFdFB2YuWuI1IHwFAmqMSpQMClRA78jluOh91Y4TW	TRUE	FALSE	1	0		2026-10-21T04:08:08.393Z	
+USR-SLS-KERTEK	sales_kertek	Noval (Sales Kertek)	sales	BR-KERTEK	$2a$10$0NtiL1b6DrAeEFdFB2YuWuI1IHwFAmqMSpQMClRA78jluOh91Y4TW	TRUE	FALSE	1	0		2026-10-21T04:08:08.393Z	
+USR-SLS-WND	sales_wonodadi	Salam (Sales Wonodadi)	sales	BR-WONODADI	$2a$10$0NtiL1b6DrAeEFdFB2YuWuI1IHwFAmqMSpQMClRA78jluOh91Y4TW	TRUE	FALSE	1	0		2026-10-21T04:08:08.393Z	

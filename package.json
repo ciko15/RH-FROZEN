@@ -1,0 +1,33 @@
+{
+  "name": "sales-terpadu",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "node scripts/dev-server.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "make-icons": "node scripts/make-icons.mjs",
+    "create-admin": "node scripts/create-admin.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie": "^0.6.0",
+    "dotenv": "^18.0.8",
+    "googleapis": "^144.0.0",
+    "html2canvas": "^1.4.1",
+    "idb": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "sharp": "^0.33.3",
+    "vite": "^5.2.0",
+    "vite-plugin-pwa": "^0.19.8"
+  }
+}

@@ -1,0 +1,455 @@
+:root {
+  --primary: #1d4ed8;
+  --primary-hover: #1e40af;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --warning: #f59e0b;
+  --info: #0284c7;
+
+  --bg-app: #eef3fb;
+  --bg-card: #ffffff;
+  --bg-input: #f8fafc;
+  --border-color: #e2e8f0;
+  
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-light: #94a3b8;
+
+  --radius-card: 14px;
+  --radius-btn: 10px;
+  --radius-input: 8px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+[data-theme="dark"] {
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warning: #fbbf24;
+
+  --bg-app: #0b1120;
+  --bg-card: #1e293b;
+  --bg-input: #0f172a;
+  --border-color: #334155;
+
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-light: #64748b;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  line-height: 1.5;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+#app {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  background-color: var(--bg-app);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tablet & Desktop Responsiveness */
+@media (min-width: 768px) {
+  body {
+    display: block;
+    background-color: var(--bg-app);
+  }
+
+  #app {
+    max-width: 100% !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Reset mobile bottom padding for views on desktop */
+  .dashboard-page,
+  .orders-page,
+  .sales-page,
+  .stock-page,
+  .more-page,
+  .receivables-page,
+  .reports-page,
+  .history-page,
+  .customers-page,
+  .purchases-page,
+  .targets-page,
+  .users-page,
+  .branches-page,
+  .audit-page,
+  .opname-page,
+  .new-order-page,
+  .return-new-page {
+    padding-bottom: 24px !important;
+  }
+
+  /* Desktop Modal View: Dialog Mengambang di Tengah Layar */
+  .sheet-overlay {
+    align-items: center !important;
+    padding: 24px !important;
+  }
+
+  .sheet-content {
+    max-width: 580px !important;
+    width: 100% !important;
+    max-height: 85vh !important;
+    height: auto !important;
+    border-radius: 18px !important;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35) !important;
+  }
+
+  .sheet-content.sheet-inv {
+    max-width: 680px !important;
+  }
+
+  /* Responsive grid layouts on desktop */
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+
+  .orders-grid, .invoices-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 14px !important;
+  }
+
+  .order-list {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+}
+
+/* ==========================================================
+   MOBILE-FIRST MODAL & BOTTOM ACTION SYSTEM
+   Tampilan layar penuh di HP, rapi, bersih & tombol tutup di bawah
+   ========================================================== */
+.sheet-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  background: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1000 !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  transition: opacity 0.2s ease;
+}
+
+/* Di HP: Memenuhi seluruh frame layar (100% width, 100% height) */
+.sheet-content {
+  background: var(--bg-card) !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100dvh !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-shadow: none !important;
+}
+
+@media (min-width: 768px) {
+  /* Di Desktop / Tablet: Dialog Mengambang Elegan di Tengah */
+  .sheet-overlay {
+    align-items: center !important;
+    padding: 24px !important;
+  }
+
+  .sheet-content {
+    max-width: 580px !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 88vh !important;
+    border-radius: 20px !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35) !important;
+  }
+
+  .sheet-content.sheet-inv {
+    max-width: 680px !important;
+  }
+}
+
+.sheet-head,
+.sheet-header {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.sheet-head h3,
+.sheet-header h3 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+[data-theme="dark"] .sheet-close {
+  background: #334155;
+  color: #cbd5e1;
+}
+
+.sheet-close:hover {
+  background: var(--border-color);
+  color: var(--text-main);
+}
+
+.sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 20px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Footer / Action Bar Bawah yang Rapi & Profesional */
+.sheet-footer,
+.modal-footer-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  padding-bottom: calc(14px + var(--safe-bottom, 0px));
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+}
+
+.sheet-footer .btn-secondary,
+.modal-footer-actions .btn-cancel-modal {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 16px;
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-btn);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+[data-theme="dark"] .sheet-footer .btn-secondary,
+[data-theme="dark"] .modal-footer-actions .btn-cancel-modal {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+.sheet-footer .btn-primary,
+.modal-footer-actions .btn-save-modal {
+  flex: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 16px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-btn);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+@media (min-width: 1200px) {
+  .orders-grid, .invoices-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+
+  .order-list {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* Touch targets min 44px & input zoom prevention */
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: 16px;
+}
+
+button {
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-btn);
+  font-weight: 600;
+  transition: opacity 0.2s;
+}
+
+button:active {
+  opacity: 0.8;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input, select, textarea {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-main);
+  border-radius: var(--radius-input);
+  width: 100%;
+  color-scheme: light;
+}
+
+[data-theme="dark"] input, 
+[data-theme="dark"] select, 
+[data-theme="dark"] textarea {
+  color-scheme: dark;
+}
+
+/* Styling ikon kalender agar terlihat terang, kontras, dan bisa diklik untuk memilih tanggal */
+input[type="date"] {
+  position: relative;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  display: block !important;
+  cursor: pointer;
+  opacity: 1 !important;
+  font-size: 18px;
+  width: 22px;
+  height: 22px;
+  padding: 2px;
+  border-radius: 4px;
+  /* Light mode: icon kalender warna biru primer */
+  filter: invert(24%) sepia(85%) saturate(2462%) hue-rotate(215deg) brightness(94%) contrast(98%);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+  /* Dark mode: icon kalender warna PUTIH BERSIH TERANG agar terlihat jelas di atas background gelap */
+  filter: invert(100%) brightness(200%) drop-shadow(0 0 1px rgba(255, 255, 255, 0.8));
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  transform: scale(1.15);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--primary);
+  border-color: transparent;
+}
+
+/* Utilities */
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-color);
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge-proses { background: #fef3c7; color: #b45309; }
+.badge-dikirim { background: #dcfce7; color: #15803d; }
+.badge-selesai { background: #f1f5f9; color: #475569; }
+.badge-dibatalkan { background: #fee2e2; color: #b91c1c; }
+.badge-menunggu { background: #ffedd5; color: #c2410c; }
+.badge-gagal { background: #fef2f2; color: #dc2626; }
+
+[data-theme="dark"] .badge-proses { background: rgba(245, 158, 11, 0.2); color: #fde68a; }
+[data-theme="dark"] .badge-dikirim { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+[data-theme="dark"] .badge-selesai { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+[data-theme="dark"] .badge-dibatalkan { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+[data-theme="dark"] .badge-menunggu { background: rgba(249, 115, 22, 0.2); color: #fdba74; }
+[data-theme="dark"] .badge-gagal { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+
+/* Standar Empty State Icon Box Modern */
+.empty-icon-box {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px auto;
+  color: var(--primary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}

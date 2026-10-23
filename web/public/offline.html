@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tidak Ada Koneksi - Sales Terpadu</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: #eef3fb;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+      box-sizing: border-box;
+    }
+    .card {
+      background: #ffffff;
+      padding: 30px 24px;
+      border-radius: 14px;
+      max-width: 360px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+    h2 {
+      margin: 0 0 10px 0;
+      color: #1e293b;
+      font-size: 20px;
+    }
+    p {
+      color: #64748b;
+      font-size: 14px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+    button {
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      min-height: 44px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📡</div>
+    <h2>Tidak Ada Koneksi Internet</h2>
+    <p>Aplikasi membutuhkan koneksi internet untuk memuat halaman ini. Silakan periksa koneksi Wi-Fi atau data seluler Anda.</p>
+    <button onclick="window.location.reload()">Coba Lagi</button>
+  </div>
+</body>
+</html>
