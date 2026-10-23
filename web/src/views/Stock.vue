@@ -366,8 +366,8 @@ const authStore = useAuthStore();
 const appStore = useAppStore();
 const user = computed(() => authStore.user);
 
-const canManageStock = computed(() => ['admin', 'manajer'].includes(user.value?.role));
-const canViewCost = computed(() => ['admin', 'manajer'].includes(user.value?.role));
+const canManageStock = computed(() => user.value?.role === 'admin');
+const canViewCost = computed(() => user.value?.role === 'admin');
 
 const loading = ref(false);
 const products = ref([]);

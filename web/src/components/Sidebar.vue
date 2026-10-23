@@ -117,7 +117,7 @@ const user = computed(() => authStore.user);
 const theme = computed(() => appStore.theme);
 const isAdmin = computed(() => user.value?.role === 'admin');
 const isSales = computed(() => user.value?.role === 'sales');
-const canManageData = computed(() => ['admin', 'manajer'].includes(user.value?.role));
+const canManageData = computed(() => user.value?.role === 'admin');
 
 const userInitials = computed(() => {
   if (!user.value?.full_name) return 'U';

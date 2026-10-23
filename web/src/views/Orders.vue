@@ -323,7 +323,7 @@ const offlineStore = useOfflineStore();
 const orderInvoiceModal = ref(null);
 
 const user = computed(() => authStore.user);
-const canCreateOrder = computed(() => ['admin', 'manajer', 'sales'].includes(user.value?.role));
+const canCreateOrder = computed(() => ['admin', 'sales'].includes(user.value?.role));
 
 const tabs = ['Semua', 'Proses', 'Dikirim', 'Selesai'];
 const currentTab = ref('Semua');
@@ -351,19 +351,19 @@ const syncing = computed(() => offlineStore.syncing);
 
 // Role action checkers
 const canShipOrder = computed(() => {
-  return ['admin', 'manajer'].includes(user.value?.role) && selectedOrder.value?.status === 'Proses';
+  return user.value?.role === 'admin' && selectedOrder.value?.status === 'Proses';
 });
 const canCancelOrder = computed(() => {
-  return ['admin', 'manajer'].includes(user.value?.role) && 
+  return user.value?.role === 'admin' && 
     (selectedOrder.value?.status === 'Proses' || selectedOrder.value?.status === 'Dikirim') &&
     !selectedOrder.value?.invoice_id;
 });
 const canPayOrder = computed(() => {
-  return ['admin', 'manajer', 'kasir', 'sales'].includes(user.value?.role) && 
+  return ['admin', 'sales'].includes(user.value?.role) && 
     (selectedOrder.value?.status === 'Proses' || selectedOrder.value?.status === 'Dikirim');
 });
 const canEditOrder = computed(() => {
-  return ['admin', 'manajer', 'sales'].includes(user.value?.role) && selectedOrder.value?.status !== 'Dibatalkan';
+  return ['admin', 'sales'].includes(user.value?.role) && selectedOrder.value?.status !== 'Dibatalkan';
 });
 
 // Edit Order Modal States

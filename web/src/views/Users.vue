@@ -1,16 +1,25 @@
 <template>
   <div class="users-page">
+    <div class="page-title-bar">
+      <div class="title-meta">
+        <h2>Manajemen Pengguna</h2>
+        <span class="subtext">Kelola akun Admin dan Tim Sales</span>
+      </div>
+      <button class="btn-add-primary" @click="showAddModal = true">
+        <Icon name="plus" size="16" /> + Tambah User
+      </button>
+    </div>
+
     <div class="header-action">
       <input
         v-model="searchQuery"
         type="text"
-        placeholder="Cari user / nama..."
+        placeholder="Cari user / nama lengkap / username / cabang..."
         class="search-input"
       />
-      <button class="btn-add" @click="showAddModal = true">+</button>
     </div>
 
-    <!-- Filter Tab Role -->
+    <!-- Filter Tab Role (Hanya Admin dan Sales) -->
     <div class="role-tabs">
       <button
         v-for="r in roles"
@@ -24,29 +33,60 @@
     </div>
 
     <div v-if="loading" class="state-msg">Memuat data pengguna...</div>
-    <div v-else class="users-list">
-      <div
-        v-for="u in filteredUsers"
-        :key="u.id"
-        class="card user-card"
-        @click="openUserDetail(u)"
-      >
-        <div class="user-left">
-          <div class="avatar">{{ getInitials(u.full_name) }}</div>
-          <div class="user-info">
-            <span class="user-name">{{ u.full_name }}</span>
-            <small class="user-username">@{{ u.username }}</small>
-            <span class="branch-tag">{{ u.branch_name }}</span>
+    <div v-else-if="filteredUsers.length === 0" class="card empty-state">
+      <div class="empty-icon-box"><Icon name="users" size="38" /></div>
+      <h3>Tidak Ada Pengguna</h3>
+      <p>Tidak ada pengguna yang cocok dengan filter pencarian.</p>
+    </div>
+    <div v-else>
+      <div class="users-grid">
+        <div
+          v-for="u in paginatedUsers"
+          :key="u.id"
+          class="card user-card"
+          @click="openUserDetail(u)"
+        >
+          <div class="user-main">
+            <div class="avatar">{{ getInitials(u.full_name) }}</div>
+            <div class="user-info">
+              <span class="user-name">{{ u.full_name }}</span>
+              <small class="user-username">@{{ u.username }}</small>
+              <span class="branch-tag" v-if="u.branch_name"><Icon name="map-pin" size="11" /> {{ u.branch_name }}</span>
+            </div>
+          </div>
+
+          <div class="user-badges">
+            <span class="badge" :class="getRoleBadgeClass(u.role)">
+              {{ u.role.toUpperCase() }}
+            </span>
+            <span class="badge" :class="u.active ? 'badge-dikirim' : 'badge-dibatalkan'">
+              {{ u.active ? 'Aktif' : 'Nonaktif' }}
+            </span>
           </div>
         </div>
+      </div>
 
-        <div class="user-right">
-          <span class="badge" :class="getRoleBadgeClass(u.role)">
-            {{ u.role.toUpperCase() }}
-          </span>
-          <span class="badge" :class="u.active ? 'badge-dikirim' : 'badge-dibatalkan'">
-            {{ u.active ? 'Aktif' : 'Nonaktif' }}
-          </span>
+      <!-- Pagination Pengguna (10 data per halaman) -->
+      <div v-if="totalPages > 1" class="pagination-bar">
+        <span class="page-info">
+          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredUsers.length) }} dari {{ filteredUsers.length }} user
+        </span>
+        <div class="page-buttons">
+          <button
+            class="btn-page"
+            :disabled="currentPage === 1"
+            @click="currentPage--"
+          >
+            &laquo; Sebelumnya
+          </button>
+          <span class="page-num">Hal {{ currentPage }} / {{ totalPages }}</span>
+          <button
+            class="btn-page"
+            :disabled="currentPage === totalPages"
+            @click="currentPage++"
+          >
+            Berikutnya &raquo;
+          </button>
         </div>
       </div>
     </div>
@@ -66,8 +106,8 @@
           </div>
 
           <div class="form-group">
-            <label>Username * (Huruf kecil, angka, titik, underscore)</label>
-            <input v-model="newUser.username" type="text" placeholder="budi.solo" required />
+            <label>Username * (Huruf kecil, angka, underscore)</label>
+            <input v-model="newUser.username" type="text" placeholder="sales_solo" required />
           </div>
 
           <div class="form-row">
@@ -75,8 +115,6 @@
               <label>Peran (Role) *</label>
               <select v-model="newUser.role">
                 <option value="sales">Sales</option>
-                <option value="kasir">Kasir</option>
-                <option value="manajer">Manajer</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
@@ -162,8 +200,12 @@ const loading = ref(false);
 const users = ref([]);
 const branches = ref([]);
 const searchQuery = ref('');
-const roles = ['Semua', 'admin', 'manajer', 'sales', 'kasir'];
+const roles = ['Semua', 'admin', 'sales'];
 const selectedRole = ref('Semua');
+
+// Pagination state
+const currentPage = ref(1);
+const pageSize = ref(10);
 
 // State Tambah User
 const showAddModal = ref(false);
@@ -185,10 +227,23 @@ const filteredUsers = computed(() => {
     list = list.filter(u => u.role === selectedRole.value);
   }
   if (searchQuery.value) {
-    const q = searchQuery.value.toLowerCase();
-    list = list.filter(u => u.username.includes(q) || u.full_name.toLowerCase().includes(q));
+    const q = searchQuery.value.toLowerCase().trim();
+    list = list.filter(u =>
+      (u.username && u.username.toLowerCase().includes(q)) ||
+      (u.full_name && u.full_name.toLowerCase().includes(q)) ||
+      (u.branch_name && u.branch_name.toLowerCase().includes(q))
+    );
   }
   return list;
+});
+
+const totalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredUsers.value.length / pageSize.value));
+});
+
+const paginatedUsers = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredUsers.value.slice(start, start + pageSize.value);
 });
 
 async function fetchUsers() {
@@ -224,21 +279,46 @@ function generateRandomPassword() {
 }
 
 async function submitCreateUser() {
-  createLoading.value = true;
-  try {
-    await apiFetch('/api/users', {
-      method: 'POST',
-      body: JSON.stringify(newUser.value)
-    });
-    appStore.showToast('User baru berhasil dibuat!', 'success');
-    showAddModal.value = false;
-    newUser.value = { username: '', full_name: '', role: 'sales', branch_id: branches.value[0]?.id || '', password: '' };
-    fetchUsers();
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
-  } finally {
-    createLoading.value = false;
-  }
+  const tempId = 'temp-' + Date.now();
+  const branchObj = branches.value.find(b => b.id === newUser.value.branch_id);
+  const addedUser = {
+    id: tempId,
+    username: newUser.value.username.trim(),
+    full_name: newUser.value.full_name.trim(),
+    role: newUser.value.role,
+    branch_id: newUser.value.branch_id,
+    branch_name: branchObj ? branchObj.name : '',
+    active: true,
+    created_at: new Date().toISOString()
+  };
+
+  // 1. INSTAN OPTIMISTIK: Langsung muncul di paling atas
+  users.value.unshift(addedUser);
+  showAddModal.value = false;
+  appStore.showToast('User baru berhasil dibuat! (Sinkronisasi di latar belakang...)', 'success');
+  appStore.startSync();
+
+  const payloadToSend = { ...newUser.value };
+  newUser.value = { username: '', full_name: '', role: 'sales', branch_id: branches.value[0]?.id || '', password: '' };
+
+  // 2. DI LATAR BELAKANG: Kirim ke server
+  apiFetch('/api/users', {
+    method: 'POST',
+    body: JSON.stringify(payloadToSend)
+  }).then(res => {
+    if (res?.data?.id) {
+      const idx = users.value.findIndex(u => u.id === tempId);
+      if (idx !== -1) {
+        users.value[idx] = { ...users.value[idx], ...res.data };
+      }
+    }
+  }).catch(err => {
+    console.error('[SYNC USER ERROR]', err);
+    appStore.showToast('Gagal sinkron user baru: ' + err.message, 'error');
+    users.value = users.value.filter(u => u.id !== tempId);
+  }).finally(() => {
+    appStore.finishSync();
+  });
 }
 
 function openUserDetail(u) {
@@ -251,23 +331,28 @@ async function toggleUserActive() {
   const actionText = newStatus ? 'mengaktifkan' : 'menonaktifkan';
   if (!confirm(`Apakah Anda yakin ingin ${actionText} akun @${u.username}?`)) return;
 
-  try {
-    await apiFetch(`/api/users/${u.id}/active`, {
-      method: 'POST',
-      body: JSON.stringify({ active: newStatus })
-    });
-    appStore.showToast(`Akun @${u.username} berhasil di${newStatus ? 'aktifkan' : 'nonaktifkan'}`, 'success');
-    selectedUser.value = null;
-    fetchUsers();
-  } catch (err) {
+  // Optimistic update
+  u.active = newStatus;
+  selectedUser.value = null;
+  appStore.showToast(`Akun @${u.username} di${newStatus ? 'aktifkan' : 'nonaktifkan'}!`, 'success');
+  appStore.startSync();
+
+  apiFetch(`/api/users/${u.id}/active`, {
+    method: 'POST',
+    body: JSON.stringify({ active: newStatus })
+  }).catch(err => {
     appStore.showToast(err.message, 'error');
-  }
+    u.active = !newStatus; // Rollback
+  }).finally(() => {
+    appStore.finishSync();
+  });
 }
 
 async function handleResetPassword() {
   const newPw = prompt('Masukkan password baru (minimal 8 karakter huruf & angka):');
   if (!newPw) return;
 
+  appStore.startSync();
   try {
     await apiFetch(`/api/users/${selectedUser.value.id}/reset-password`, {
       method: 'POST',
@@ -277,6 +362,8 @@ async function handleResetPassword() {
     selectedUser.value = null;
   } catch (err) {
     appStore.showToast(err.message, 'error');
+  } finally {
+    appStore.finishSync();
   }
 }
 
@@ -305,21 +392,50 @@ onMounted(() => {
   padding: 16px;
   padding-bottom: 90px;
 }
+.page-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+.title-meta h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-main);
+}
+.title-meta .subtext {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.btn-add-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--primary);
+  color: white;
+  padding: 8px 14px;
+  border-radius: var(--radius-btn);
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 114, 255, 0.25);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.btn-add-primary:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
 .header-action {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
 }
 .search-input {
-  flex: 1;
-}
-.btn-add {
-  width: 44px;
-  min-height: 44px;
-  background: var(--primary);
-  color: white;
-  border-radius: var(--radius-btn);
-  font-size: 24px;
+  width: 100%;
 }
 .role-tabs {
   display: flex;
@@ -333,66 +449,159 @@ onMounted(() => {
   color: var(--text-muted);
   font-size: 12px;
   min-height: 34px;
-  padding: 4px 10px;
+  padding: 4px 14px;
   border-radius: 8px;
   text-transform: capitalize;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
 }
 .role-btn.active {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
 }
-.users-list {
+.empty-state {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-muted);
+}
+.empty-icon-box {
+  width: 64px;
+  height: 64px;
+  background: var(--bg-hover);
+  border-radius: 50%;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px auto;
+  color: var(--text-muted);
+}
+.empty-state h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 4px;
+}
+.users-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
 }
 .user-card {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 12px);
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   cursor: pointer;
-  margin-bottom: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.user-left {
+.user-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: #cbd5e1;
+}
+.user-main {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 1;
 }
 .avatar {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   font-size: 15px;
+  flex-shrink: 0;
 }
 .user-info {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 .user-name {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
+  color: var(--text-main);
 }
 .user-username {
   font-size: 12px;
   color: var(--text-muted);
 }
 .branch-tag {
-  font-size: 10px;
-  color: var(--text-light);
+  font-size: 11px;
+  color: var(--primary);
+  background: rgba(0, 114, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
   margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: fit-content;
 }
-.user-right {
+.user-badges {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Pagination Bar */
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 4px 8px 4px;
+  margin-top: 14px;
+  border-top: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.page-info {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-page {
+  padding: 6px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+.btn-page:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.btn-page:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.page-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 
 /* Modals */
