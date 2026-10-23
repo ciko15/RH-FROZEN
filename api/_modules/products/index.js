@@ -44,14 +44,22 @@ export default async function handler(req, res) {
         products = products.filter(p => p.name && p.name.toLowerCase().includes(search));
       }
 
-      const mapped = products.map(p => ({
-        ...p,
-        price: parseFloat(p.price || 0),
-        cost_price: parseFloat(p.cost_price || 0),
-        stock: parseInt(p.stock || 0, 10),
-        active: String(p.active).toUpperCase() === 'TRUE',
-        is_low_stock: parseInt(p.stock || 0, 10) <= lowThreshold
-      }));
+      const mapped = products.map(p => {
+        let imgVal = typeof p.image === 'string' ? p.image.trim() : '';
+        // Abaikan jika bukan string URL / Data URI base64 yang valid (misal 'TRUE', 'null', dll)
+        if (!imgVal.startsWith('http') && !imgVal.startsWith('data:image/') && !imgVal.startsWith('/')) {
+          imgVal = '';
+        }
+        return {
+          ...p,
+          image: imgVal,
+          price: parseFloat(p.price || 0),
+          cost_price: parseFloat(p.cost_price || 0),
+          stock: parseInt(p.stock || 0, 10),
+          active: String(p.active).toUpperCase() === 'TRUE',
+          is_low_stock: parseInt(p.stock || 0, 10) <= lowThreshold
+        };
+      });
 
       return res.status(200).json({
         ok: true,

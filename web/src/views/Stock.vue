@@ -67,7 +67,13 @@
         >
           <div class="stock-left">
             <div class="prod-thumb">
-              <img v-if="p.image" :src="p.image" :alt="p.name" class="prod-img" />
+              <img
+                v-if="isValidImage(p.image)"
+                :src="p.image"
+                :alt="p.name"
+                class="prod-img"
+                @error="onImgError(p)"
+              />
               <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
             </div>
             <div class="stock-details">
@@ -650,6 +656,18 @@ async function submitCreateProduct() {
     fetchProducts();
   } finally {
     appStore.finishSync();
+  }
+}
+
+function isValidImage(img) {
+  if (!img || typeof img !== 'string') return false;
+  const s = img.trim();
+  return s.startsWith('data:image/') || s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/');
+}
+
+function onImgError(product) {
+  if (product) {
+    product.image = '';
   }
 }
 
