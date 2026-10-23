@@ -59,7 +59,27 @@
     <div class="icon">📡</div>
     <h2>Tidak Ada Koneksi Internet</h2>
     <p>Aplikasi membutuhkan koneksi internet untuk memuat halaman ini. Silakan periksa koneksi Wi-Fi atau data seluler Anda.</p>
-    <button onclick="window.location.reload()">Coba Lagi</button>
+    <button onclick="handleRetry()">Coba Lagi</button>
   </div>
+
+  <script>
+    async function handleRetry() {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (let reg of regs) {
+            await reg.unregister();
+          }
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (let k of keys) {
+            await caches.delete(k);
+          }
+        }
+      } catch (e) {}
+      window.location.href = '/login';
+    }
+  </script>
 </body>
 </html>
