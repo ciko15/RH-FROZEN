@@ -14,6 +14,19 @@
     <div class="menu-list">
       <div class="menu-group-title">Menu Utama & Keuangan</div>
 
+      <router-link to="/stock" class="menu-item card">
+        <div class="m-left">
+          <div class="m-icon-box icon-stock">
+            <Icon name="stock" size="20" />
+          </div>
+          <div class="m-text">
+            <span class="m-title">Stok Produk</span>
+            <span class="m-sub">Daftar harga jual & ketersediaan stok barang</span>
+          </div>
+        </div>
+        <span class="m-arrow">›</span>
+      </router-link>
+
       <router-link to="/receivables" class="menu-item card">
         <div class="m-left">
           <div class="m-icon-box icon-receivables">
@@ -259,6 +272,7 @@ async function handleLogout() {
   transform: scale(1.08);
 }
 
+.icon-stock       { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
 .icon-receivables { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
 .icon-reports     { background: rgba(16, 185, 129, 0.15); color: #34d399; }
 .icon-targets     { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }

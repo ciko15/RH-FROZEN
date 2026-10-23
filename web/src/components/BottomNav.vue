@@ -24,12 +24,8 @@
       <span class="label">Pelanggan</span>
     </router-link>
 
-    <!-- Menu Laporan (Sales) / Stok (Non-Sales) -->
-    <router-link v-if="isSales" to="/reports" class="nav-item" active-class="active">
-      <Icon name="reports" size="20" class="nav-svg" />
-      <span class="label">Laporan</span>
-    </router-link>
-    <router-link v-else to="/stock" class="nav-item" active-class="active">
+    <!-- Menu Stok Produk (Dapat dilihat oleh semua role termasuk Sales) -->
+    <router-link to="/stock" class="nav-item" active-class="active">
       <Icon name="stock" size="20" class="nav-svg" />
       <span class="label">Stok</span>
     </router-link>
