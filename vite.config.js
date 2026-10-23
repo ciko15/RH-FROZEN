@@ -34,11 +34,11 @@ function backendServerPlugin() {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
   root: './web',
   plugins: [
     vue(),
-    backendServerPlugin(),
+    command === 'serve' ? backendServerPlugin() : null,
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icons/*.png'],
@@ -113,4 +113,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));
