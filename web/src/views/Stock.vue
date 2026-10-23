@@ -50,53 +50,87 @@
       </button>
     </div>
 
-    <!-- Tabel Daftar Stok -->
+    <!-- Daftar Stok Barang -->
     <div v-if="loading" class="state-msg">Memuat data stok barang...</div>
-    <div v-else class="stock-list">
-      <div
-        v-for="p in filteredProducts"
-        :key="p.id"
-        class="card stock-card"
-        :class="{ 'card-low': p.is_low_stock }"
-      >
-        <div class="stock-left">
-          <div class="prod-thumb">
-            <img v-if="p.image" :src="p.image" :alt="p.name" class="prod-img" />
-            <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
+    <div v-else-if="filteredProducts.length === 0" class="empty-state">
+      <div class="empty-icon-box"><Icon name="package" size="38" /></div>
+      <h3>Barang Tidak Ditemukan</h3>
+      <p>Tidak ada stok barang yang cocok dengan filter atau pencarian Anda.</p>
+    </div>
+    <div v-else>
+      <div class="stock-list">
+        <div
+          v-for="p in paginatedProducts"
+          :key="p.id"
+          class="card stock-card"
+          :class="{ 'card-low': p.is_low_stock }"
+        >
+          <div class="stock-left">
+            <div class="prod-thumb">
+              <img v-if="p.image" :src="p.image" :alt="p.name" class="prod-img" />
+              <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
+            </div>
+            <div class="stock-details">
+              <span class="prod-name">{{ p.name }}</span>
+              <small class="prod-cat">{{ p.category }}</small>
+              <div class="price-row">
+                <span class="price-val">Rp {{ formatNumber(p.price) }}</span>
+                <span v-if="p.cost_price" class="cost-price">Beli: Rp {{ formatNumber(p.cost_price) }}</span>
+              </div>
+            </div>
           </div>
-          <div class="stock-details">
-            <span class="prod-name">{{ p.name }}</span>
-            <small class="prod-cat">{{ p.category }}</small>
-            <div class="price-row">
-              <span class="price-val">Rp {{ formatNumber(p.price) }}</span>
-              <span v-if="p.cost_price" class="cost-price">Beli: Rp {{ formatNumber(p.cost_price) }}</span>
+
+          <div class="stock-right">
+            <div class="stock-qty-box">
+              <span class="stock-label">Stok</span>
+              <span
+                class="stock-badge"
+                :class="p.is_low_stock ? 'badge-low' : 'badge-safe'"
+              >
+                {{ p.stock }}
+              </span>
+            </div>
+            <div class="stock-actions-btn" v-if="canManageStock">
+              <button
+                class="btn-edit"
+                @click="openEditModal(p)"
+                title="Edit Data & Gambar Barang"
+              >
+                <Icon name="edit" size="13" />
+                <span>Edit</span>
+              </button>
+              <button
+                class="btn-adjust"
+                @click="openAdjustModal(p)"
+              >
+                Koreksi
+              </button>
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="stock-right">
-          <span
-            class="stock-badge"
-            :class="p.is_low_stock ? 'badge-low' : 'badge-safe'"
+      <!-- Pagination Stok -->
+      <div v-if="stockTotalPages > 1" class="pagination-bar">
+        <span class="page-info">
+          Menampilkan {{ (stockCurrentPage - 1) * stockPageSize + 1 }} - {{ Math.min(stockCurrentPage * stockPageSize, filteredProducts.length) }} dari {{ filteredProducts.length }} barang
+        </span>
+        <div class="page-buttons">
+          <button
+            class="btn-page"
+            :disabled="stockCurrentPage === 1"
+            @click="stockCurrentPage--"
           >
-            {{ p.stock }}
-          </span>
-          <div class="stock-actions-btn" v-if="canManageStock">
-            <button
-              class="btn-edit"
-              @click="openEditModal(p)"
-              title="Edit Data & Gambar Barang"
-            >
-              <Icon name="edit" size="13" />
-              <span>Edit</span>
-            </button>
-            <button
-              class="btn-adjust"
-              @click="openAdjustModal(p)"
-            >
-              Koreksi
-            </button>
-          </div>
+            &laquo; Sebelumnya
+          </button>
+          <span class="page-num">Hal {{ stockCurrentPage }} / {{ stockTotalPages }}</span>
+          <button
+            class="btn-page"
+            :disabled="stockCurrentPage === stockTotalPages"
+            @click="stockCurrentPage++"
+          >
+            Berikutnya &raquo;
+          </button>
         </div>
       </div>
     </div>
@@ -489,6 +523,19 @@ const filteredProducts = computed(() => {
   return list;
 });
 
+// Pagination Stok Barang (10 per halaman)
+const stockCurrentPage = ref(1);
+const stockPageSize = ref(10);
+
+const stockTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredProducts.value.length / stockPageSize.value));
+});
+
+const paginatedProducts = computed(() => {
+  const start = (stockCurrentPage.value - 1) * stockPageSize.value;
+  return filteredProducts.value.slice(start, start + stockPageSize.value);
+});
+
 async function fetchProducts() {
   loading.value = true;
   try {
@@ -648,18 +695,77 @@ onMounted(() => {
   border-color: var(--primary);
 }
 .stock-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
 }
 .stock-card {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 12px);
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.stock-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: #cbd5e1;
 }
 .card-low {
   border-left: 4px solid var(--danger);
+}
+
+/* Pagination Bar */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 10px);
+}
+.page-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-page {
+  background: var(--bg-hover, #f1f5f9);
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-page:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn-page:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.page-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 .stock-left {
   display: flex;
