@@ -1966,40 +1966,31 @@ export async function appendRow(tabName, rowObject, headers) {
     setCached(tabName, cached, 60);
   }
 
-  // 2. Sync ke Google di background tanpa menahan respon klien
-  (async () => {
-    try {
-      if (!SA_EMAIL || !SA_KEY) {
-        // Panggil Google Apps Script dengan timeout agar tidak menggantung
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        try {
-          await callGas('appendRow', { tabName, rowObject, headers });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-      } else {
-        const sheets = getSheetsClient();
-        const values = [headers.map(h => sanitizeText(rowObject[h] !== undefined ? rowObject[h] : ''))];
-        await sheets.spreadsheets.values.append({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `${tabName}!A:Z`,
-          valueInputOption: 'RAW',
-          requestBody: { values }
-        });
-      }
-    } catch (e) {
-      console.warn(`[BG SYNC APPEND] Tab ${tabName}:`, e.message);
+  // 2. Tulis langsung ke Google Spreadsheet / Google Apps Script (Wajib di-await agar tidak hilang saat serverless selesai)
+  try {
+    if (!SA_EMAIL || !SA_KEY) {
+      await callGas('appendRow', { tabName, rowObject, headers });
+    } else {
+      const sheets = getSheetsClient();
+      const values = [headers.map(h => sanitizeText(rowObject[h] !== undefined ? rowObject[h] : ''))];
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tabName}!A:Z`,
+        valueInputOption: 'RAW',
+        requestBody: { values }
+      });
     }
-  })();
+  } catch (e) {
+    console.error(`[SYNC APPEND ERROR] Tab ${tabName}:`, e.message);
+    throw e;
+  }
 }
 
 /**
  * Mengupdate baris tertentu
- * Instan: Perbarui baris di cache memori seketika, lalu sync ke Google di background
  */
 export async function updateRow(tabName, rowIndex, rowObject, headers) {
-  // 1. Update cache lokal seketika agar GET berikutnya langsung melihat data baru
+  // 1. Update cache lokal seketika
   const cached = getCached(tabName);
   if (Array.isArray(cached)) {
     const idx = cached.findIndex(r => r.id === rowObject.id || r._rowIndex === rowIndex);
@@ -2009,31 +2000,24 @@ export async function updateRow(tabName, rowIndex, rowObject, headers) {
     setCached(tabName, cached, 60);
   }
 
-  // 2. Sync ke Google di background tanpa menahan respon klien
-  (async () => {
-    try {
-      if (!SA_EMAIL || !SA_KEY) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        try {
-          await callGas('updateRow', { tabName, rowIndex, rowObject, headers });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-      } else {
-        const sheets = getSheetsClient();
-        const values = [headers.map(h => sanitizeText(rowObject[h] !== undefined ? rowObject[h] : ''))];
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `${tabName}!A${rowIndex}:Z${rowIndex}`,
-          valueInputOption: 'RAW',
-          requestBody: { values }
-        });
-      }
-    } catch (e) {
-      console.warn(`[BG SYNC UPDATE] Tab ${tabName} Row ${rowIndex}:`, e.message);
+  // 2. Sync langsung ke Google Spreadsheet / Apps Script
+  try {
+    if (!SA_EMAIL || !SA_KEY) {
+      await callGas('updateRow', { tabName, rowIndex, rowObject, headers });
+    } else {
+      const sheets = getSheetsClient();
+      const values = [headers.map(h => sanitizeText(rowObject[h] !== undefined ? rowObject[h] : ''))];
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${tabName}!A${rowIndex}:Z${rowIndex}`,
+        valueInputOption: 'RAW',
+        requestBody: { values }
+      });
     }
-  })();
+  } catch (e) {
+    console.error(`[SYNC UPDATE ERROR] Tab ${tabName} Row ${rowIndex}:`, e.message);
+    throw e;
+  }
 }
 
 export { SPREADSHEET_ID };
