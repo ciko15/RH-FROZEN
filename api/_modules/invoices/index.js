@@ -8,11 +8,18 @@ import { checkIdempotency, saveIdempotency } from '../_lib/idempotency.js';
 import { handleApiError, ApiError } from '../_lib/errors.js';
 
 const createInvoiceSchema = z.object({
-  order_id: z.string().min(1, 'ID Order wajib disertakan'),
+  customer_id: z.string().min(1, 'Pelanggan wajib dipilih'),
+  items: z.array(z.object({
+    product_id: z.string().min(1),
+    qty: z.coerce.number().int().positive('Qty harus positif'),
+    price: z.coerce.number().min(0).optional(),
+    discount: z.coerce.number().min(0).optional().default(0)
+  })).min(1, 'Minimal 1 barang'),
   pay_method: z.enum(['Tunai', 'Transfer', 'Tempo'], { required_error: 'Metode pembayaran wajib dipilih' }),
   paid_amount: z.coerce.number().min(0, 'Jumlah bayar tidak boleh negatif').optional().default(0),
   note: z.string().optional().default(''),
-  approved_by: z.string().optional()
+  approved_by: z.string().optional(),
+  client_key: z.string().optional()
 });
 
 export default async function handler(req, res) {
@@ -81,15 +88,18 @@ export default async function handler(req, res) {
 
       // Teruskan ke Google Apps Script (transaksi atomik ber-lock)
       const gasPayload = {
-        order_id: data.order_id,
+        customer_id: data.customer_id,
+        items: data.items,
         pay_method: data.pay_method,
         paid_amount: data.paid_amount,
         note: data.note,
         user_id: authUser.id,
-        approved_by: data.approved_by
+        branch_id: authUser.branch_id || '',
+        approved_by: data.approved_by,
+        client_key: data.client_key || idempotencyKey || ''
       };
 
-      const resultInvoice = await callGas('createInvoice', gasPayload);
+      const resultInvoice = await callGas('createSalesTx', gasPayload);
 
       const responsePayload = {
         ok: true,

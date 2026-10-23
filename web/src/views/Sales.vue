@@ -1,208 +1,168 @@
 <template>
-  <div class="sales-page">
-    <!-- Header Bar Penjualan & Kasir -->
-    <div class="sales-header">
-      <div class="sales-tabs">
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'waiting' }"
-          @click="activeTab = 'waiting'"
-        >
-          Menunggu Pembayaran ({{ waitingOrders.length }})
+  <div class="pos-page">
+    <div class="pos-header">
+      <div class="tabs">
+        <button class="tab-btn" :class="{ active: tab === 'pos' }" @click="tab = 'pos'">
+          🛒 Kasir Penjualan
         </button>
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'completed' }"
-          @click="activeTab = 'completed'"
-        >
-          Penjualan Selesai
+        <button class="tab-btn" :class="{ active: tab === 'history' }" @click="tab = 'history'">
+          📄 Riwayat Transaksi ({{ invoices.length }})
         </button>
       </div>
-
-      <router-link to="/orders/new" class="btn-new-sale">
-        <Icon name="plus" size="18" />
-        <span>+ Transaksi Kasir Baru</span>
-      </router-link>
     </div>
 
-    <!-- Tab 1: Menunggu Pembayaran -->
-    <div v-if="activeTab === 'waiting'" class="tab-content">
-      <div v-if="loadingWaiting" class="state-msg">Memuat data pesanan...</div>
-      <div v-else-if="waitingOrders.length === 0" class="empty-state">
-        <div class="empty-icon-box"><Icon name="check" size="38" /></div>
-        <h3>Semua Beres!</h3>
-        <p>Tidak ada pesanan yang menunggu pembayaran saat ini.</p>
-      </div>
-      <div v-else class="orders-grid">
-        <div
-          v-for="o in waitingOrders"
-          :key="o.id"
-          class="card waiting-card"
-          @click="openPayModal(o)"
-        >
-          <div class="card-head">
-            <span class="order-no"><Icon name="package" size="14" /> {{ o.order_no }}</span>
-            <span class="badge" :class="o.status === 'Proses' ? 'badge-proses' : 'badge-dikirim'">
-              {{ o.status }}
-            </span>
-          </div>
-          <div class="cust-name">{{ o.customer_name }}</div>
-          <div class="card-foot">
-            <span class="date">{{ o.order_date }}</span>
-            <span class="amount">Rp {{ formatNumber(o.total_amount) }}</span>
-          </div>
-          <button class="btn-pay-now"><Icon name="dollar-sign" size="15" /> Proses Pembayaran</button>
+    <!-- TAB 1: KASIR TRANSAKSI BARU -->
+    <div v-if="tab === 'pos'" class="pos-body">
+      <!-- Pilih Pelanggan -->
+      <div class="card p-14">
+        <div class="sec-title">1. Pilih Pelanggan</div>
+        <div class="cust-row">
+          <select v-model="selectedCustomerId" class="pos-select" @change="onCustomerChange">
+            <option value="">-- Pilih Pelanggan End Customer --</option>
+            <option v-for="c in customers" :key="c.id" :value="c.id">
+              {{ c.name }} ({{ c.phone || 'Tanpa No HP' }})
+            </option>
+          </select>
+        </div>
+        <div v-if="selectedCustomer" class="cust-meta">
+          <div><strong>Alamat:</strong> {{ selectedCustomer.address || '-' }}</div>
+          <div><strong>Piutang/Bon:</strong> Rp {{ fmt(selectedCustomer.balance) }}</div>
+          <div><strong>Batas Kredit:</strong> {{ selectedCustomer.credit_limit > 0 ? 'Rp ' + fmt(selectedCustomer.credit_limit) : 'Tanpa Batas' }}</div>
         </div>
       </div>
-    </div>
 
-    <!-- Tab 2: Penjualan Selesai (Invoices) -->
-    <div v-if="activeTab === 'completed'" class="tab-content">
-      <div v-if="loadingCompleted" class="state-msg">Memuat riwayat invoice...</div>
-      <div v-else-if="completedInvoices.length === 0" class="empty-state">
-        <div class="empty-icon-box"><Icon name="file-text" size="38" /></div>
-        <h3>Belum Ada Penjualan Selesai</h3>
-      </div>
-      <div v-else>
-        <div class="invoices-grid">
-          <div
-            v-for="inv in paginatedCompletedInvoices"
-            :key="inv.id"
-            class="card invoice-card"
-            @click="openInvoiceDetail(inv)"
-          >
-            <div class="card-head">
-              <span class="inv-no"><Icon name="file-text" size="14" /> {{ inv.invoice_no }}</span>
-              <span class="badge" :class="parseFloat(inv.remaining) <= 0 ? 'badge-dikirim' : 'badge-dibatalkan'">
-                {{ parseFloat(inv.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + formatNumber(inv.remaining) }}
-              </span>
-            </div>
-            <div class="cust-name">{{ inv.customer_name }}</div>
-            <div class="card-foot">
-              <span class="date">{{ inv.invoice_date }}</span>
-              <span class="amount">Total: Rp {{ formatNumber(inv.total_due) }}</span>
-            </div>
-          </div>
+      <!-- Pilih Barang dari Stok Sales Sendiri -->
+      <div class="card p-14">
+        <div class="sec-title">2. Pilih Barang (Dari Stok Saya)</div>
+        <div class="search-wrap">
+          <Icon name="search" size="14" />
+          <input v-model="search" type="text" placeholder="Cari nama barang di stok Anda..." />
         </div>
 
-        <!-- Pagination Selesai -->
-        <div v-if="invTotalPages > 1" class="pagination-bar">
-          <span class="page-info">
-            Menampilkan {{ (invCurrentPage - 1) * invPageSize + 1 }} - {{ Math.min(invCurrentPage * invPageSize, completedInvoices.length) }} dari {{ completedInvoices.length }} invoice
-          </span>
-          <div class="page-buttons">
-            <button
-              class="btn-page"
-              :disabled="invCurrentPage === 1"
-              @click="invCurrentPage--"
-            >
-              &laquo; Sebelumnya
-            </button>
-            <span class="page-num">Hal {{ invCurrentPage }} / {{ invTotalPages }}</span>
-            <button
-              class="btn-page"
-              :disabled="invCurrentPage === invTotalPages"
-              @click="invCurrentPage++"
-            >
-              Berikutnya &raquo;
-            </button>
-          </div>
+        <div v-if="loadingStock" class="empty">Memuat stok Anda...</div>
+        <div v-else-if="filteredStock.length === 0" class="empty">
+          <p>Tidak ada stok yang tersedia.</p>
+          <small class="text-muted">Minta barang ke admin lewat menu Permintaan Barang bila stok kosong.</small>
         </div>
-      </div>
-    </div>
-
-    <!-- Modal Form Pembayaran (Sesuai Pratinjau Invoice Bagian 10) -->
-    <div v-if="payModalOrder" class="sheet-overlay" @click.self="payModalOrder = null">
-      <div class="sheet-content">
-        <div class="sheet-header">
-          <h3>Pembayaran Order {{ payModalOrder.order_no }}</h3>
-          <button class="sheet-close" @click="payModalOrder = null"><Icon name="x" size="18" /></button>
-        </div>
-
-        <div class="sheet-body">
-          <!-- Rincian Belanja -->
-          <div class="calc-box">
-            <div class="calc-row">
-              <span>Total Belanja:</span>
-              <strong>Rp {{ formatNumber(payModalOrder.total_amount) }}</strong>
-            </div>
-            <div class="calc-row">
-              <span>Bon Sebelumnya:</span>
-              <strong>Rp {{ formatNumber(payCustomerBalance) }}</strong>
-            </div>
-            <div class="calc-row total-row">
-              <span>Total Tagihan:</span>
-              <strong class="total-big">Rp {{ formatNumber(payTotalDue) }}</strong>
-            </div>
-          </div>
-
-          <!-- Form Input Pembayaran -->
-          <div class="form-group">
-            <label>Metode Pembayaran</label>
-            <select v-model="payMethod" @change="onMethodChange">
-              <option value="Tunai">Tunai</option>
-              <option value="Transfer">Transfer</option>
-              <option value="Tempo">Tempo (Hutang)</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <label>Jumlah Bayar (Rp)</label>
-              <span style="font-size:11px; color:var(--text-muted);">Bisa bayar penuh atau sebagian (cicil)</span>
-            </div>
-            <input
-              v-model="formattedPaidAmount"
-              type="text"
-              inputmode="numeric"
-              :disabled="payMethod === 'Tempo'"
-              placeholder="0"
-            />
-            <!-- Quick preset buttons -->
-            <div class="quick-pay-presets" v-if="payMethod !== 'Tempo'">
-              <button type="button" class="btn-preset" @click="setPaidAmount(payTotalDue)">Bayar Lunas (100%)</button>
-              <button type="button" class="btn-preset" @click="setPaidAmount(Math.round(payTotalDue / 2))">Bayar 50%</button>
-              <button type="button" class="btn-preset" @click="setPaidAmount(0)">Bayar Nanti (Rp 0)</button>
-            </div>
-          </div>
-
-          <!-- Sisa Tagihan / Hutang Berikutnya Real-time -->
-          <div class="balance-preview" :class="payRemaining <= 0 ? 'lunas-box' : 'tempo-box'">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <span>{{ payRemaining <= 0 ? 'Status Pembayaran:' : 'Sisa Tagihan / Hutang Berikutnya:' }}</span>
-              <span class="badge" :class="payRemaining <= 0 ? 'badge-dikirim' : 'badge-dibatalkan'">
-                {{ payRemaining <= 0 ? 'LUNAS' : (paidAmount > 0 ? 'SEBAGIAN / CICIL' : 'TEMPO / BELUM BAYAR') }}
-              </span>
-            </div>
-            <strong class="bal-huge">Rp {{ formatNumber(payRemaining) }}</strong>
-            <small v-if="payRemaining > 0" style="font-size:11px; opacity:0.85; display:block; margin-top:4px;">
-              * Sisa Rp {{ formatNumber(payRemaining) }} akan otomatis tercatat ke buku piutang pelanggan untuk pembayaran berikutnya.
-            </small>
-          </div>
-
-          <div class="form-group">
-            <label>Catatan Pembayaran (Opsional)</label>
-            <input v-model="payNote" type="text" placeholder="Contoh: Transfer BCA" />
-          </div>
-
+        <div v-else class="stock-grid">
           <button
-            class="btn-save-invoice"
-            @click="submitPayment"
-            :disabled="payLoading || paidAmount > payTotalDue || !isOnline"
+            v-for="s in filteredStock"
+            :key="s.product_id"
+            type="button"
+            class="stock-tile"
+            :class="{ zero: s.stock <= 0, chosen: cartQtyOf(s.product_id) > 0 }"
+            :disabled="s.stock <= 0"
+            @click="addToCart(s)"
           >
-            {{ !isOnline ? 'Pembayaran Tidak Dapat Dilakukan Saat Offline' : (payLoading ? 'Memproses...' : 'Simpan & Terbitkan Invoice') }}
+            <span class="stock-emoji">{{ s.emoji || '📦' }}</span>
+            <span class="stock-name">{{ s.product_name }}</span>
+            <span class="stock-qty" :class="{ danger: s.stock <= 0 }">Stok: {{ s.stock }} pcs</span>
+            <span class="stock-price">Rp {{ fmt(s.price) }}</span>
+            <span v-if="cartQtyOf(s.product_id) > 0" class="stock-badge">{{ cartQtyOf(s.product_id) }}</span>
           </button>
         </div>
       </div>
+
+      <!-- Keranjang & Checkout -->
+      <div class="card p-14">
+        <div class="sec-title">3. Keranjang Penjualan ({{ cart.length }})</div>
+        <div v-if="cart.length === 0" class="empty">Keranjang kosong. Pilih barang di atas.</div>
+        <div v-else class="cart-list">
+          <div v-for="(it, idx) in cart" :key="it.product_id" class="cart-row">
+            <div class="cart-info">
+              <div class="cart-name">{{ it.emoji }} {{ it.product_name }}</div>
+              <small class="text-muted">@ Rp {{ fmt(it.price) }} · Maks stok: {{ it.maxStock }}</small>
+            </div>
+            <div class="cart-ctrl">
+              <div class="qty-btn-group">
+                <button type="button" @click="decCart(idx)">−</button>
+                <input v-model.number="it.qty" type="number" min="1" :max="it.maxStock" @input="clampQty(it)" />
+                <button type="button" :disabled="it.qty >= it.maxStock" @click="it.qty++">+</button>
+              </div>
+              <div class="cart-subtotal">Rp {{ fmt(it.qty * it.price) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ringkasan & Pembayaran -->
+        <div v-if="cart.length > 0" class="checkout-box">
+          <div class="sum-row">
+            <span>Subtotal Penjualan</span>
+            <strong>Rp {{ fmt(cartTotal) }}</strong>
+          </div>
+          <div class="sum-row">
+            <span>Bon / Piutang Sebelumnya</span>
+            <span>Rp {{ fmt(selectedCustomer?.balance || 0) }}</span>
+          </div>
+          <div class="sum-row total">
+            <span>Total Tagihan</span>
+            <strong class="total-big">Rp {{ fmt(totalDue) }}</strong>
+          </div>
+
+          <div class="pay-form">
+            <div class="form-group">
+              <label>Metode Pembayaran</label>
+              <select v-model="payMethod" class="pos-select" @change="onPayMethodChange">
+                <option value="Tunai">Tunai</option>
+                <option value="Transfer">Transfer</option>
+                <option value="Tempo">Tempo (Hutang)</option>
+              </select>
+            </div>
+            <div class="form-group" v-if="payMethod !== 'Tempo'">
+              <div class="flex-between">
+                <label>Nominal Diterima</label>
+                <button type="button" class="btn-quick" @click="paidAmount = totalDue">Uang Pas</button>
+              </div>
+              <input v-model.number="paidAmount" type="number" min="0" />
+            </div>
+            <div class="form-group">
+              <label>Catatan Transaksi</label>
+              <input v-model="txNote" type="text" placeholder="Catatan opsional..." />
+            </div>
+            <button
+              class="btn-checkout"
+              :disabled="submitting || !selectedCustomerId || cart.length === 0"
+              @click="submitTransaction"
+            >
+              <Icon name="check" size="18" />
+              <span>{{ submitting ? 'Menyimpan...' : 'Selesaikan Transaksi (Cetak/Simpan)' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Modal Lihat Invoice Penuh -->
-    <div v-if="selectedInvoice" class="sheet-overlay" @click.self="selectedInvoice = null">
-      <div class="sheet-content sheet-inv">
-        <div class="sheet-close-bar">
-          <button class="sheet-close" @click="selectedInvoice = null"><Icon name="x" size="16" /> Tutup</button>
+    <!-- TAB 2: RIWAYAT TRANSAKSI / INVOICE -->
+    <div v-if="tab === 'history'" class="pos-history">
+      <div v-if="loadingInvoices" class="empty">Memuat riwayat transaksi...</div>
+      <div v-else-if="invoices.length === 0" class="empty">Belum ada transaksi kasir.</div>
+      <div v-else class="inv-list">
+        <div v-for="inv in invoices" :key="inv.id" class="card inv-card" @click="viewInvoice(inv)">
+          <div class="inv-top">
+            <strong><Icon name="file-text" size="14" /> {{ inv.invoice_no }}</strong>
+            <span class="badge" :class="parseFloat(inv.remaining) <= 0 ? 'badge-lunas' : 'badge-tempo'">
+              {{ parseFloat(inv.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + fmt(inv.remaining) }}
+            </span>
+          </div>
+          <div class="inv-cust">{{ inv.customer_name }}</div>
+          <div class="inv-bottom">
+            <span>{{ inv.invoice_date || inv.tx_date }}</span>
+            <strong>Rp {{ fmt(inv.total_due) }}</strong>
+          </div>
         </div>
-        <InvoiceView :invoice="selectedInvoice" />
+      </div>
+    </div>
+
+    <!-- Modal Pratinjau Invoice -->
+    <div v-if="activeInvoice" class="sheet-overlay" @click.self="activeInvoice = null">
+      <div class="sheet-content">
+        <div class="sheet-header">
+          <h3>Invoice {{ activeInvoice.invoice_no }}</h3>
+          <button class="sheet-close" @click="activeInvoice = null"><Icon name="x" size="18" /></button>
+        </div>
+        <div class="sheet-body">
+          <InvoiceView :invoice="activeInvoice" />
+        </div>
       </div>
     </div>
   </div>
@@ -210,463 +170,211 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
 import { apiFetch } from '../api.js';
+import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
-import { useOfflineStore } from '../stores/offline.js';
-import InvoiceView from '../components/InvoiceView.vue';
 import Icon from '../components/Icon.vue';
+import InvoiceView from '../components/InvoiceView.vue';
 
-const route = useRoute();
+const authStore = useAuthStore();
 const appStore = useAppStore();
-const offlineStore = useOfflineStore();
-const isOnline = computed(() => offlineStore.isOnline);
 
-const activeTab = ref('waiting');
-const loadingWaiting = ref(false);
-const loadingCompleted = ref(false);
-const waitingOrders = ref([]);
-const completedInvoices = ref([]);
+const tab = ref('pos');
+const customers = ref([]);
+const stock = ref([]);
+const invoices = ref([]);
+const cart = ref([]);
 
-// Pagination Invoices (10 per halaman)
-const invCurrentPage = ref(1);
-const invPageSize = ref(10);
-
-const invTotalPages = computed(() => {
-  return Math.max(1, Math.ceil(completedInvoices.value.length / invPageSize.value));
-});
-
-const paginatedCompletedInvoices = computed(() => {
-  const start = (invCurrentPage.value - 1) * invPageSize.value;
-  return completedInvoices.value.slice(start, start + invPageSize.value);
-});
-
-// State Pembayaran
-const payModalOrder = ref(null);
-const payCustomerBalance = ref(0);
+const selectedCustomerId = ref('');
+const search = ref('');
 const payMethod = ref('Tunai');
 const paidAmount = ref(0);
-const payNote = ref('');
-const payLoading = ref(false);
+const txNote = ref('');
+const submitting = ref(false);
+const loadingStock = ref(true);
+const loadingInvoices = ref(false);
+const activeInvoice = ref(null);
 
-const selectedInvoice = ref(null);
+const selectedCustomer = computed(() => customers.value.find(c => c.id === selectedCustomerId.value));
 
-const payTotalDue = computed(() => {
-  if (!payModalOrder.value) return 0;
-  return (payModalOrder.value.total_amount || 0) + payCustomerBalance.value;
+const filteredStock = computed(() => {
+  const q = search.value.toLowerCase().trim();
+  return stock.value.filter(s => !q || (s.product_name || '').toLowerCase().includes(q));
 });
 
-const payRemaining = computed(() => {
-  const rem = payTotalDue.value - (paidAmount.value || 0);
-  return Math.max(rem, 0);
-});
+const cartTotal = computed(() => cart.value.reduce((s, it) => s + (it.qty * it.price), 0));
+const totalDue = computed(() => cartTotal.value + parseFloat(selectedCustomer.value?.balance || 0));
 
-// Pemisah ribuan otomatis untuk input jumlah bayar
-const formattedPaidAmount = computed({
-  get() {
-    if (paidAmount.value === 0) return '0';
-    return (paidAmount.value || '').toLocaleString('id-ID');
-  },
-  set(val) {
-    const raw = String(val).replace(/\D/g, '');
-    paidAmount.value = raw ? parseInt(raw, 10) : 0;
-  }
-});
-
-function setPaidAmount(val) {
-  paidAmount.value = val;
+function fmt(n) {
+  return (parseFloat(n) || 0).toLocaleString('id-ID');
 }
 
-function onMethodChange() {
-  if (payMethod.value === 'Tempo') {
-    paidAmount.value = 0;
+function cartQtyOf(prodId) {
+  return cart.value.find(i => i.product_id === prodId)?.qty || 0;
+}
+
+function addToCart(s) {
+  const ex = cart.value.find(i => i.product_id === s.product_id);
+  if (ex) {
+    if (ex.qty < s.stock) ex.qty++;
+    else appStore.showToast('Jumlah mencapai batas stok Anda', 'warning');
   } else {
-    paidAmount.value = payTotalDue.value;
+    cart.value.push({
+      product_id: s.product_id,
+      product_name: s.product_name,
+      emoji: s.emoji || '📦',
+      price: s.price || 0,
+      qty: 1,
+      maxStock: s.stock
+    });
   }
 }
 
-async function fetchWaitingOrders() {
-  loadingWaiting.value = true;
-  try {
-    const res = await apiFetch('/api/orders?status=Proses');
-    const prosesOrders = res.data || [];
-    const resDikirim = await apiFetch('/api/orders?status=Dikirim');
-    const dikirimOrders = resDikirim.data || [];
-    waitingOrders.value = [...prosesOrders, ...dikirimOrders];
-
-    // Jika ada order_id dari query URL
-    const queryOrderId = route.query.order_id;
-    if (queryOrderId) {
-      const match = waitingOrders.value.find(o => o.id === queryOrderId);
-      if (match) openPayModal(match);
-    }
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
-  } finally {
-    loadingWaiting.value = false;
-  }
+function decCart(idx) {
+  if (cart.value[idx].qty > 1) cart.value[idx].qty--;
+  else cart.value.splice(idx, 1);
 }
 
-async function fetchCompletedInvoices() {
-  loadingCompleted.value = true;
-  try {
-    const res = await apiFetch('/api/invoices');
-    completedInvoices.value = res.data || [];
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
-  } finally {
-    loadingCompleted.value = false;
-  }
+function clampQty(it) {
+  if (it.qty > it.maxStock) it.qty = it.maxStock;
+  if (it.qty < 1) it.qty = 1;
 }
 
-async function openPayModal(order) {
-  payModalOrder.value = order;
-  payMethod.value = 'Tunai';
-  payNote.value = '';
-  payLoading.value = false;
+function onCustomerChange() {
+  paidAmount.value = totalDue.value;
+}
 
-  // Ambil saldo hutang pelanggan terkini
+function onPayMethodChange() {
+  if (payMethod.value === 'Tempo') paidAmount.value = 0;
+  else paidAmount.value = totalDue.value;
+}
+
+async function loadData() {
   try {
-    const resCust = await apiFetch('/api/orders/options');
-    const cust = (resCust.data?.customers || []).find(c => c.id === order.customer_id);
-    payCustomerBalance.value = cust ? parseFloat(cust.balance || 0) : 0;
+    const [custRes, stockRes] = await Promise.all([
+      apiFetch('/api/customers'),
+      apiFetch('/api/products/sales-stock')
+    ]);
+    customers.value = (custRes.data || []).filter(c => c.active !== false);
+    stock.value = stockRes.data || [];
   } catch (e) {
-    payCustomerBalance.value = 0;
+    appStore.showToast(`Gagal memuat: ${e.message}`, 'error');
+  } finally {
+    loadingStock.value = false;
   }
-
-  paidAmount.value = (order.total_amount || 0) + payCustomerBalance.value;
 }
 
-async function submitPayment() {
-  if (paidAmount.value > payTotalDue.value) {
-    appStore.showToast('Pembayaran tidak boleh melebihi total tagihan', 'warning');
-    return;
+async function loadInvoices() {
+  loadingInvoices.value = true;
+  try {
+    const res = await apiFetch('/api/invoices?limit=50');
+    invoices.value = res.data || [];
+  } catch (e) {
+    appStore.showToast(`Gagal memuat invoice: ${e.message}`, 'error');
+  } finally {
+    loadingInvoices.value = false;
   }
-
-  const targetOrder = payModalOrder.value;
-  const payPayload = {
-    order_id: targetOrder.id,
-    pay_method: payMethod.value,
-    paid_amount: paidAmount.value,
-    note: payNote.value
-  };
-
-  // INSTANT OPTIMISTIC UPDATE: Langsung tutup modal dan pindahkan order ke daftar Selesai seketika
-  payModalOrder.value = null;
-  waitingOrders.value = waitingOrders.value.filter(o => o.id !== targetOrder.id);
-  appStore.showToast('Pembayaran berhasil diproses! (Sinkronisasi di latar belakang...)', 'success');
-  appStore.startSync();
-
-  // Jalankan request ke backend & spreadsheet di background
-  (async () => {
-    try {
-      const res = await apiFetch('/api/invoices', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey },
-        body: JSON.stringify(payPayload)
-      });
-      // Ambil detail invoice lengkap
-      const resDetail = await apiFetch(`/api/invoices/${res.data.id}`);
-      selectedInvoice.value = resDetail.data;
-    } catch (err) {
-      console.error('[BACKGROUND INVOICE ERROR]:', err);
-      appStore.showToast(`Gagal memproses ke database: ${err.message}`, 'error');
-      // Kembalikan jika error
-      fetchWaitingOrders();
-    } finally {
-      appStore.finishSync();
-      fetchCompletedInvoices();
-    }
-  })();
 }
 
-async function openInvoiceDetail(inv) {
+async function submitTransaction() {
+  if (!selectedCustomerId.value) return appStore.showToast('Pilih pelanggan terlebih dahulu', 'warning');
+  if (cart.value.length === 0) return appStore.showToast('Keranjang masih kosong', 'warning');
+
+  submitting.value = true;
+  const clientKey = crypto.randomUUID();
+  try {
+    const res = await apiFetch('/api/invoices', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': clientKey },
+      body: JSON.stringify({
+        customer_id: selectedCustomerId.value,
+        pay_method: payMethod.value,
+        paid_amount: paidAmount.value,
+        note: txNote.value,
+        client_key: clientKey,
+        items: cart.value.map(it => ({
+          product_id: it.product_id,
+          qty: it.qty,
+          price: it.price
+        }))
+      })
+    });
+
+    appStore.showToast('Transaksi berhasil disimpan!', 'success');
+    activeInvoice.value = res.data;
+    cart.value = [];
+    selectedCustomerId.value = '';
+    await loadData();
+    await loadInvoices();
+  } catch (e) {
+    appStore.showToast(`Transaksi gagal: ${e.message}`, 'error');
+  } finally {
+    submitting.value = false;
+  }
+}
+
+async function viewInvoice(inv) {
   try {
     const res = await apiFetch(`/api/invoices/${inv.id}`);
-    selectedInvoice.value = res.data;
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
+    activeInvoice.value = res.data;
+  } catch (e) {
+    activeInvoice.value = inv;
   }
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
 }
 
 onMounted(() => {
-  fetchWaitingOrders();
-  fetchCompletedInvoices();
+  loadData();
+  loadInvoices();
 });
 </script>
 
 <style scoped>
-.sales-page {
-  padding: 16px;
-  padding-bottom: 90px;
-}
-.sales-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.sales-tabs {
-  display: flex;
-  gap: 8px;
-  flex: 1;
-  min-width: 280px;
-}
-.btn-new-sale {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--primary, #0284c7);
-  color: #fff;
-  padding: 10px 16px;
-  border-radius: var(--radius-btn, 8px);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
-  transition: transform 0.15s, opacity 0.15s;
-}
-.btn-new-sale:hover {
-  opacity: 0.95;
-  transform: translateY(-1px);
-}
-.tab-btn {
-  flex: 1;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-size: 13px;
-  min-height: 40px;
-  border-radius: var(--radius-btn);
-}
-.tab-btn.active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
-}
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
-  color: var(--text-muted);
-}
-.empty-icon {
-  font-size: 40px;
-  margin-bottom: 8px;
-}
-.orders-grid, .invoices-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.pagination-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 12px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-card, 10px);
-}
-.page-info {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-.page-buttons {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.btn-page {
-  background: var(--bg-hover, #f1f5f9);
-  border: 1px solid var(--border-color, #cbd5e1);
-  color: var(--text-main);
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.btn-page:hover:not(:disabled) {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-}
-.btn-page:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.page-num {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-main);
-}
-.waiting-card, .invoice-card {
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.card-head, .card-foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.order-no, .inv-no {
-  font-weight: 700;
-  color: var(--primary);
-  font-size: 14px;
-}
-.cust-name {
-  font-weight: 600;
-  font-size: 15px;
-}
-.date {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.amount {
-  font-weight: 700;
-  font-size: 14px;
-}
-.btn-pay-now {
-  background: var(--success);
-  color: white;
-  width: 100%;
-  margin-top: 6px;
-  min-height: 38px;
-  font-size: 13px;
-}
-
-/* Modal Bottom Sheet */
-.sheet-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 100;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.sheet-content {
-  background: var(--bg-card);
-  width: 100%;
-  max-width: 480px;
-  max-height: 90vh;
-  overflow-y: auto;
-  border-radius: 20px 20px 0 0;
-  padding: 20px 16px;
-}
-.sheet-inv {
-  padding: 12px;
-  background: var(--bg-app);
-}
-.sheet-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 12px;
-  margin-bottom: 14px;
-}
-.sheet-close {
-  background: transparent;
-  font-size: 16px;
-  min-height: 36px;
-  padding: 4px;
-}
-.sheet-close-bar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 8px;
-}
-.sheet-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.calc-box {
-  background: var(--bg-app);
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-}
-.calc-row {
-  display: flex;
-  justify-content: space-between;
-}
-.total-row {
-  border-top: 1px dashed var(--border-color);
-  padding-top: 6px;
-  font-size: 15px;
-}
-.total-big {
-  color: var(--primary);
-  font-size: 18px;
-}
-.balance-preview {
-  padding: 12px;
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-}
-.lunas-box {
-  background: #dcfce7;
-  color: #15803d;
-}
-.tempo-box {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-.bal-huge {
-  font-size: 20px;
-  font-weight: 800;
-}
-.quick-pay-presets {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-.btn-preset {
-  flex: 1;
-  background: var(--bg-app);
-  border: 1px solid var(--border-color);
-  font-size: 11px;
-  font-weight: 600;
-  padding: 6px 4px;
-  border-radius: 6px;
-  cursor: pointer;
-  color: var(--text-main);
-  transition: all 0.2s ease;
-}
-.btn-preset:hover {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
-}
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.btn-save-invoice {
-  background: var(--success);
-  color: white;
-  width: 100%;
-  min-height: 44px;
-  font-size: 15px;
-  margin-top: 8px;
-}
+.pos-page { display: flex; flex-direction: column; gap: 14px; padding-bottom: 90px; }
+.tabs { display: flex; gap: 8px; }
+.tab-btn { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border, #ddd); background: var(--card-bg, #fff); font-weight: 600; cursor: pointer; }
+.tab-btn.active { background: var(--primary, #2563eb); color: #fff; border-color: transparent; }
+.p-14 { padding: 14px; }
+.sec-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.pos-select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border, #ddd); background: transparent; }
+.cust-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; font-size: 12px; margin-top: 8px; padding: 8px; background: rgba(0,0,0,.03); border-radius: 8px; }
+.search-wrap { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
+.search-wrap input { border: none; outline: none; flex: 1; background: transparent; }
+.stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; max-height: 380px; overflow-y: auto; }
+.stock-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px; border: 1.5px solid var(--border, #e5e5e5); border-radius: 10px; background: var(--card-bg, #fff); cursor: pointer; text-align: center; }
+.stock-tile.chosen { border-color: var(--primary, #2563eb); }
+.stock-tile.zero { opacity: .4; cursor: not-allowed; }
+.stock-emoji { font-size: 32px; }
+.stock-name { font-size: 12px; font-weight: 600; line-height: 1.2; }
+.stock-qty { font-size: 11px; font-weight: 700; color: #059669; }
+.stock-qty.danger { color: #dc2626; }
+.stock-price { font-size: 12px; font-weight: 700; color: var(--primary, #2563eb); }
+.stock-badge { position: absolute; top: 6px; right: 6px; background: var(--primary, #2563eb); color: #fff; border-radius: 999px; min-width: 20px; height: 20px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.cart-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.cart-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border, #eee); }
+.cart-name { font-weight: 600; font-size: 13px; }
+.cart-ctrl { display: flex; align-items: center; gap: 12px; }
+.qty-btn-group { display: flex; align-items: center; gap: 4px; }
+.qty-btn-group button { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border, #ddd); background: transparent; cursor: pointer; }
+.qty-btn-group input { width: 44px; text-align: center; }
+.cart-subtotal { font-weight: 700; font-size: 13px; min-width: 70px; text-align: right; }
+.checkout-box { border-top: 2px solid var(--border, #eee); padding-top: 12px; }
+.sum-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.sum-row.total { padding: 8px 0; font-size: 15px; border-top: 1px dashed var(--border, #ddd); margin-top: 6px; }
+.total-big { color: var(--primary, #2563eb); font-size: 18px; }
+.pay-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.btn-quick { border: none; background: none; color: var(--primary, #2563eb); font-weight: 600; cursor: pointer; font-size: 12px; }
+.btn-checkout { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: none; border-radius: 12px; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
+.btn-checkout:disabled { opacity: .5; cursor: not-allowed; }
+.empty { text-align: center; color: var(--text-muted, #888); padding: 24px; font-size: 13px; }
+.inv-list { display: flex; flex-direction: column; gap: 10px; }
+.inv-card { padding: 14px; cursor: pointer; }
+.inv-top, .inv-bottom { display: flex; justify-content: space-between; align-items: center; }
+.inv-cust { margin: 6px 0; font-size: 14px; font-weight: 600; }
+.badge-lunas { background: rgba(16,185,129,.15); color: #059669; }
+.badge-tempo { background: rgba(239,68,68,.15); color: #dc2626; }
+.sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 1000; }
+.sheet-content { background: var(--card-bg, #fff); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 18px; }
+.sheet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.sheet-close { background: none; border: none; cursor: pointer; }
 </style>

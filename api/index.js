@@ -130,6 +130,10 @@ export default async function handler(req, res) {
     }
 
     // 6. Products & Stock
+    if (pathname === '/api/products/sales-stock') {
+      const { default: h } = await import('./_modules/products/sales-stock.js');
+      return await h(req, res);
+    }
     if (pathname === '/api/products/stock') {
       const { default: h } = await import('./_modules/products/stock.js');
       return await h(req, res);
@@ -190,6 +194,13 @@ export default async function handler(req, res) {
     }
 
     // 11. Returns
+    const returnActionMatch = pathname.match(/^\/api\/returns\/([^/]+)\/(approve|reject)$/);
+    if (returnActionMatch) {
+      req.query.id = returnActionMatch[1];
+      req.query.action = returnActionMatch[2];
+      const { default: h } = await import('./_modules/returns/action.js');
+      return await h(req, res);
+    }
     if (pathname === '/api/returns') {
       const { default: h } = await import('./_modules/returns/index.js');
       return await h(req, res);

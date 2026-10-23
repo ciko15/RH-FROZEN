@@ -87,6 +87,19 @@ function doPost(e) {
         updateSheetRow(tabName, rowIndex, rowObject, headers);
         return responseJson({ ok: true, message: 'Baris ' + rowIndex + ' berhasil diperbarui di ' + tabName });
       }
+      case 'createSalesTx':
+        return responseJson(createSalesTx(payload));
+      case 'approveReturn':
+        return responseJson(approveReturn(payload));
+      case 'rejectReturn':
+        return responseJson(rejectReturn(payload));
+      case 'getTabData': {
+        // Membaca data dari tab tertentu untuk API Node (fallback saat SA tidak tersedia)
+        const { tabName: gTabName } = payload;
+        if (!gTabName) return responseJson({ ok: false, error: 'MISSING_TAB', message: 'tabName wajib diisi' });
+        const gData = getSheetData(gTabName);
+        return responseJson({ ok: true, data: gData });
+      }
       default:
         return responseJson({ ok: false, error: 'UNKNOWN_ACTION', message: 'Aksi tidak dikenali: ' + action });
     }
@@ -229,16 +242,18 @@ function setupDatabase() {
     Customers: ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'],
     CustomerPrices: ['customer_id', 'product_id', 'price'],
     Products: ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'image', 'active'],
+    SalesStock: ['sales_id', 'product_id', 'stock', 'updated_at'],
     Suppliers: ['id', 'name', 'phone', 'address', 'active'],
     Purchases: ['id', 'purchase_no', 'date', 'supplier_id', 'branch_id', 'total', 'note', 'user_id'],
     PurchaseItems: ['id', 'purchase_id', 'product_id', 'name', 'qty', 'cost_price'],
-    Orders: ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'],
-    OrderItems: ['id', 'order_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price', 'shortage'],
-    Invoices: ['id', 'invoice_no', 'order_id', 'invoice_date', 'invoice_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by'],
+    Orders: ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at'],
+    OrderItems: ['id', 'order_id', 'product_id', 'name', 'qty', 'shortage'],
+    Invoices: ['id', 'invoice_no', 'tx_date', 'tx_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by'],
+    InvoiceItems: ['id', 'invoice_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price'],
     Payments: ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by'],
-    Returns: ['id', 'return_no', 'invoice_id', 'customer_id', 'date', 'reason', 'total', 'user_id'],
+    Returns: ['id', 'return_no', 'type', 'ref_id', 'sales_id', 'branch_id', 'date', 'reason', 'status', 'approved_by', 'approved_at', 'total_qty', 'user_id'],
     ReturnItems: ['id', 'return_id', 'product_id', 'name', 'qty', 'price'],
-    StockMovements: ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id'],
+    StockMovements: ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type'],
     SalesTargets: ['sales_id', 'month', 'target'],
     AuditLog: ['id', 'date_time', 'user_id', 'action', 'detail_json'],
     Counters: ['key', 'value'],
@@ -534,129 +549,64 @@ function forceFillMasterData() {
 /**
  * 2. createOrder
  */
+/**
+ * 2. createOrder — STOCK REQUEST: Sales minta stok dari admin
+ * Tidak ada harga, tidak ada customer, hanya qty.
+ */
 function createOrder(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const { customer_id, order_date, items, sales_id, branch_id, note, client_key, approved_by } = payload;
+    const { items, sales_id, branch_id, note, client_key } = payload;
     const now = new Date();
     const nowStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
     const timeStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'HH:mm:ss');
     const ymd = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'yyyyMMdd');
 
-    // 1. Cek Idempotensi client_key di tab Orders
+    // Idempotency check
     const orders = getSheetData('Orders');
     if (client_key) {
       const existing = orders.find(o => o.client_key === client_key);
-      if (existing) {
-        return { ok: true, data: existing, message: 'Order sudah pernah dibuat (idempoten)' };
-      }
+      if (existing) return { ok: true, data: existing, message: 'Order sudah pernah dibuat (idempoten)' };
     }
 
-    // 2. Validasi Pelanggan
-    const customers = getSheetData('Customers');
-    const customer = customers.find(c => c.id === customer_id && (c.active === true || c.active === 'TRUE' || c.active === 'true'));
-    if (!customer) {
-      return { ok: false, error: 'CUSTOMER_NOT_FOUND', message: 'Pelanggan tidak ditemukan atau nonaktif' };
-    }
+    // Validasi sales_id ada
+    const users = getSheetData('Users');
+    const sales = users.find(u => u.id === sales_id && u.role === 'sales');
+    if (!sales) return { ok: false, error: 'SALES_NOT_FOUND', message: 'Akun sales tidak ditemukan' };
 
-    // 3. Validasi Barang & Stok
+    // Validasi barang
     const products = getSheetData('Products');
-    const custPrices = getSheetData('CustomerPrices');
-    const configs = getSheetData('Config');
-    const maxDiscCfg = configs.find(c => c.key === 'max_discount_percent');
-    const maxDiscountPercent = maxDiscCfg ? parseFloat(maxDiscCfg.value) : 10;
-
     const validatedItems = [];
     for (const item of items) {
       const product = products.find(p => p.id === item.product_id && (p.active === true || p.active === 'TRUE' || p.active === 'true'));
-      if (!product) {
-        return { ok: false, error: 'PRODUCT_NOT_FOUND', message: `Barang dengan ID ${item.product_id} tidak valid` };
-      }
-
+      if (!product) return { ok: false, error: 'PRODUCT_NOT_FOUND', message: `Barang ID ${item.product_id} tidak ditemukan` };
       const qty = parseInt(item.qty, 10);
-      if (isNaN(qty) || qty <= 0) {
-        return { ok: false, error: 'INVALID_QTY', message: `Qty untuk barang ${product.name} harus bilangan bulat positif` };
-      }
-
-      const currentStock = parseInt(product.stock, 10) || 0;
-      // Stok kurang tidak lagi menolak order; catat jumlah kekurangannya
-      const shortage = Math.max(0, qty - Math.max(currentStock, 0));
-
-      // Tentukan harga: CustomerPrices > Products.price
-      let itemPrice = parseFloat(product.price);
-      const customPrice = custPrices.find(cp => cp.customer_id === customer_id && cp.product_id === item.product_id);
-      if (customPrice && customPrice.price !== '') {
-        itemPrice = parseFloat(customPrice.price);
-      }
-
-      const discount = parseFloat(item.discount || 0);
-      const lineTotal = itemPrice * qty;
-      if (discount > lineTotal) {
-        return { ok: false, error: 'INVALID_DISCOUNT', message: `Diskon barang ${product.name} melebihi subtotal` };
-      }
-
-      const discountPercent = (discount / lineTotal) * 100;
-      if (discountPercent > maxDiscountPercent && !approved_by) {
-        return { ok: false, error: 'NEED_APPROVAL', message: `Diskon barang ${product.name} (${discountPercent.toFixed(1)}%) melebihi batas maksimal ${maxDiscountPercent}% tanpa izin manajer` };
-      }
-
-      validatedItems.push({
-        product_id: product.id,
-        name: product.name,
-        qty: qty,
-        price: itemPrice,
-        discount: discount,
-        cost_price: parseFloat(product.cost_price || 0),
-        shortage: shortage,
-        productRef: product
-      });
+      if (isNaN(qty) || qty <= 0) return { ok: false, error: 'INVALID_QTY', message: `Qty untuk ${product.name} harus positif` };
+      const adminStock = parseInt(product.stock, 10) || 0;
+      const shortage = Math.max(0, qty - adminStock);
+      validatedItems.push({ product_id: product.id, name: product.name, qty, shortage });
     }
-
-    // 4. Update Stok & Tulis StockMovements
-    const ss = getSpreadsheet();
-    const prodSheet = ss.getSheetByName('Products');
-    const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'active'];
 
     const newOrderId = Utilities.getUuid();
-    const orderNo = getNextCounter(`SO-${branch_id}-${ymd}`);
+    const orderNo = getNextCounter(`STK-${branch_id}-${ymd}`);
 
-    for (const vItem of validatedItems) {
-      const p = vItem.productRef;
-      const newStock = Math.max(0, (parseInt(p.stock, 10) || 0) - vItem.qty);
-      p.stock = newStock;
-      updateSheetRow('Products', p._rowIndex, p, prodHeaders);
-
-      appendSheetRow('StockMovements', {
-        id: Utilities.getUuid(),
-        date_time: nowStr,
-        product_id: p.id,
-        change: -vItem.qty,
-        reason: 'Order',
-        ref: orderNo,
-        balance_after: newStock,
-        user_id: sales_id
-      }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id']);
-    }
-
-    // 5. Tulis Orders & OrderItems
     const newOrder = {
       id: newOrderId,
       order_no: orderNo,
-      order_date: order_date || Utilities.formatDate(now, APP_CONFIG.TIMEZONE, APP_CONFIG.DATE_FORMAT),
+      order_date: Utilities.formatDate(now, APP_CONFIG.TIMEZONE, APP_CONFIG.DATE_FORMAT),
       order_time: timeStr,
-      customer_id: customer_id,
       sales_id: sales_id,
-      branch_id: branch_id,
+      branch_id: branch_id || '',
       status: 'Proses',
       note: note || '',
-      invoice_id: '',
+      type: 'STOCK_REQUEST',
       client_key: client_key || '',
       created_at: nowStr
     };
-    appendSheetRow('Orders', newOrder, ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at']);
+    appendSheetRow('Orders', newOrder, ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at']);
 
-    ensureSheetHeader('OrderItems', 'shortage', 9);
+    ensureSheetHeader('OrderItems', 'shortage', 6);
     for (const vItem of validatedItems) {
       appendSheetRow('OrderItems', {
         id: Utilities.getUuid(),
@@ -664,22 +614,21 @@ function createOrder(payload) {
         product_id: vItem.product_id,
         name: vItem.name,
         qty: vItem.qty,
-        price: vItem.price,
-        discount: vItem.discount,
-        cost_price: vItem.cost_price,
         shortage: vItem.shortage
-      }, ['id', 'order_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price', 'shortage']);
+      }, ['id', 'order_id', 'product_id', 'name', 'qty', 'shortage']);
     }
 
-    writeAuditLog(sales_id, 'CREATE_ORDER', { order_no: orderNo, order_id: newOrderId, customer: customer.name });
-    return { ok: true, data: newOrder, message: 'Order berhasil dibuat' };
+    writeAuditLog(sales_id, 'CREATE_STOCK_REQUEST', { order_no: orderNo, order_id: newOrderId });
+    return { ok: true, data: newOrder, message: 'Permintaan stok berhasil dibuat' };
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * 3. setShipped
+ * 3. setShipped — Admin kirim stok ke sales:
+ *    Products.stock (admin/gudang) BERKURANG
+ *    SalesStock.stock (per sales) BERTAMBAH
  */
 function setShipped(payload) {
   const lock = LockService.getScriptLock();
@@ -690,50 +639,71 @@ function setShipped(payload) {
     const order = orders.find(o => o.id === order_id);
     if (!order) return { ok: false, error: 'NOT_FOUND', message: 'Order tidak ditemukan' };
     if (order.status !== 'Proses') {
-      return { ok: false, error: 'INVALID_STATUS', message: 'Hanya order berstatus Proses yang dapat diubah ke Dikirim' };
+      return { ok: false, error: 'INVALID_STATUS', message: 'Hanya order berstatus Proses yang dapat dikirim' };
     }
 
-    // Kurangi Stok Produk saat orderan diubah menjadi Dikirim
     const orderItems = getSheetData('OrderItems').filter(oi => oi.order_id === order_id);
     const products = getSheetData('Products');
-    const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'active'];
+    const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'image', 'active'];
+    const salesStock = getSheetData('SalesStock');
+    const salesStockHeaders = ['sales_id', 'product_id', 'stock', 'updated_at'];
     const nowStr = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
+    const salesId = order.sales_id;
 
     for (const item of orderItems) {
+      const qty = parseInt(item.qty, 10) || 0;
+
+      // 1. Kurangi stok admin/gudang
       const prod = products.find(p => p.id === item.product_id);
       if (prod) {
-        const currentStock = parseInt(prod.stock, 10) || 0;
-        const qty = parseInt(item.qty, 10) || 0;
-        const newStock = Math.max(0, currentStock - qty);
-        prod.stock = newStock;
+        const newAdminStock = Math.max(0, (parseInt(prod.stock, 10) || 0) - qty);
+        prod.stock = newAdminStock;
         updateSheetRow('Products', prod._rowIndex, prod, prodHeaders);
 
         appendSheetRow('StockMovements', {
-          id: Utilities.getUuid(),
-          date_time: nowStr,
-          product_id: prod.id,
-          change: -qty,
-          reason: 'Kirim Order',
-          ref: order.order_no || order.id,
-          balance_after: newStock,
-          user_id: user_id
-        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id']);
+          id: Utilities.getUuid(), date_time: nowStr, product_id: prod.id,
+          change: -qty, reason: 'Kirim ke Sales', ref: order.order_no,
+          balance_after: newAdminStock, user_id: user_id, stock_type: 'ADMIN'
+        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+      }
+
+      // 2. Tambah stok sales
+      const ssRow = salesStock.find(s => s.sales_id === salesId && s.product_id === item.product_id);
+      if (ssRow) {
+        const newSalesStock = (parseInt(ssRow.stock, 10) || 0) + qty;
+        ssRow.stock = newSalesStock;
+        ssRow.updated_at = nowStr;
+        updateSheetRow('SalesStock', ssRow._rowIndex, ssRow, salesStockHeaders);
+        appendSheetRow('StockMovements', {
+          id: Utilities.getUuid(), date_time: nowStr, product_id: item.product_id,
+          change: qty, reason: 'Terima dari Admin', ref: order.order_no,
+          balance_after: newSalesStock, user_id: salesId, stock_type: 'SALES'
+        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+      } else {
+        const newSalesStock = qty;
+        appendSheetRow('SalesStock', {
+          sales_id: salesId, product_id: item.product_id, stock: newSalesStock, updated_at: nowStr
+        }, salesStockHeaders);
+        appendSheetRow('StockMovements', {
+          id: Utilities.getUuid(), date_time: nowStr, product_id: item.product_id,
+          change: qty, reason: 'Terima dari Admin (baru)', ref: order.order_no,
+          balance_after: newSalesStock, user_id: salesId, stock_type: 'SALES'
+        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
       }
     }
 
     order.status = 'Dikirim';
-    const headers = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'];
-    updateSheetRow('Orders', order._rowIndex, order, headers);
+    updateSheetRow('Orders', order._rowIndex, order, ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at']);
 
-    writeAuditLog(user_id, 'SET_SHIPPED', { order_id: order_id, order_no: order.order_no });
-    return { ok: true, data: order, message: 'Status order berhasil diubah menjadi Dikirim dan stok telah dikurangi' };
+    writeAuditLog(user_id, 'SET_SHIPPED_STOCK', { order_id, order_no: order.order_no, sales_id: salesId });
+    return { ok: true, data: order, message: 'Stok berhasil dikirim ke sales' };
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * 4. cancelOrder
+ * 4. cancelOrder — Batalkan permintaan stok (hanya bisa jika masih Proses)
  */
 function cancelOrder(payload) {
   const lock = LockService.getScriptLock();
@@ -743,83 +713,87 @@ function cancelOrder(payload) {
     const orders = getSheetData('Orders');
     const order = orders.find(o => o.id === order_id);
     if (!order) return { ok: false, error: 'NOT_FOUND', message: 'Order tidak ditemukan' };
-    if (order.invoice_id) {
-      return { ok: false, error: 'HAS_INVOICE', message: 'Order yang sudah memiliki invoice tidak dapat dibatalkan' };
+    if (order.status !== 'Proses') {
+      return { ok: false, error: 'INVALID_STATUS', message: 'Hanya permintaan berstatus Proses yang bisa dibatalkan' };
     }
-    if (order.status !== 'Proses' && order.status !== 'Dikirim') {
-      return { ok: false, error: 'INVALID_STATUS', message: 'Order tidak dalam status Proses atau Dikirim' };
-    }
-
-    // Kembalikan Stok
-    const orderItems = getSheetData('OrderItems').filter(oi => oi.order_id === order_id);
-    const products = getSheetData('Products');
-    const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'active'];
-    const nowStr = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
-
-    for (const item of orderItems) {
-      const prod = products.find(p => p.id === item.product_id);
-      if (prod) {
-        const newStock = (parseInt(prod.stock, 10) || 0) + parseInt(item.qty, 10);
-        prod.stock = newStock;
-        updateSheetRow('Products', prod._rowIndex, prod, prodHeaders);
-
-        appendSheetRow('StockMovements', {
-          id: Utilities.getUuid(),
-          date_time: nowStr,
-          product_id: prod.id,
-          change: parseInt(item.qty, 10),
-          reason: 'Batal',
-          ref: order.order_no,
-          balance_after: newStock,
-          user_id: user_id
-        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id']);
-      }
-    }
-
     order.status = 'Dibatalkan';
     order.note = (order.note ? order.note + ' | ' : '') + 'Batal: ' + (reason || '');
-    const headers = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'];
-    updateSheetRow('Orders', order._rowIndex, order, headers);
-
-    writeAuditLog(user_id, 'CANCEL_ORDER', { order_id: order_id, order_no: order.order_no, reason: reason });
-    return { ok: true, data: order, message: 'Order berhasil dibatalkan dan stok telah dikembalikan' };
+    updateSheetRow('Orders', order._rowIndex, order, ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at']);
+    writeAuditLog(user_id, 'CANCEL_STOCK_REQUEST', { order_id, order_no: order.order_no, reason });
+    return { ok: true, data: order, message: 'Permintaan stok berhasil dibatalkan' };
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * 5. createInvoice
+ * 5. createInvoice — LEGACY (dipertahankan untuk kompatibilitas data lama)
+ * Untuk transaksi kasir baru, gunakan createSalesTx
  */
 function createInvoice(payload) {
+  return createSalesTx(payload);
+}
+
+/**
+ * 5b. createSalesTx — Transaksi kasir: Sales jual ke pelanggan dari stok sendiri
+ * Stok Sales (SalesStock) berkurang. Piutang/saldo pelanggan diperbarui.
+ */
+function createSalesTx(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const { order_id, pay_method, paid_amount, note, user_id, approved_by } = payload;
-    const orders = getSheetData('Orders');
-    const order = orders.find(o => o.id === order_id);
-    if (!order) return { ok: false, error: 'NOT_FOUND', message: 'Order tidak ditemukan' };
-    if (order.status === 'Selesai' || order.status === 'Dibatalkan') {
-      return { ok: false, error: 'INVALID_STATUS', message: `Order sudah dalam status ${order.status}` };
+    const { customer_id, items, pay_method, paid_amount, note, user_id, branch_id, approved_by, client_key } = payload;
+
+    // Idempotency
+    if (client_key) {
+      const existing = getSheetData('Invoices').find(i => i.client_key === client_key);
+      if (existing) return { ok: true, data: existing, message: 'Transaksi sudah ada (idempoten)' };
     }
 
     const customers = getSheetData('Customers');
-    const customer = customers.find(c => c.id === order.customer_id);
-    if (!customer) return { ok: false, error: 'CUSTOMER_NOT_FOUND', message: 'Data pelanggan tidak ditemukan' };
+    const customer = customers.find(c => c.id === customer_id && (c.active === true || c.active === 'TRUE' || c.active === 'true'));
+    if (!customer) return { ok: false, error: 'CUSTOMER_NOT_FOUND', message: 'Pelanggan tidak ditemukan atau nonaktif' };
 
-    const orderItems = getSheetData('OrderItems').filter(oi => oi.order_id === order_id);
-    let subtotal = 0;
-    let discount_total = 0;
-    let total_qty = 0;
+    const products = getSheetData('Products');
+    const custPrices = getSheetData('CustomerPrices');
+    const salesStock = getSheetData('SalesStock');
+    const salesStockHeaders = ['sales_id', 'product_id', 'stock', 'updated_at'];
 
-    for (const oi of orderItems) {
-      const q = parseInt(oi.qty, 10) || 0;
-      const p = parseFloat(oi.price) || 0;
-      const d = parseFloat(oi.discount) || 0;
-      subtotal += (q * p) - d;
-      discount_total += d;
-      total_qty += q;
+    let subtotal = 0, discount_total = 0, total_qty = 0;
+    const validatedItems = [];
+
+    for (const item of items) {
+      const product = products.find(p => p.id === item.product_id && (p.active === true || p.active === 'TRUE' || p.active === 'true'));
+      if (!product) return { ok: false, error: 'PRODUCT_NOT_FOUND', message: `Barang ID ${item.product_id} tidak ditemukan` };
+      const qty = parseInt(item.qty, 10);
+      if (isNaN(qty) || qty <= 0) return { ok: false, error: 'INVALID_QTY', message: `Qty ${product.name} harus positif` };
+
+      // Cek stok sales
+      const ssRow = salesStock.find(s => s.sales_id === user_id && s.product_id === item.product_id);
+      const currentSalesStock = parseInt(ssRow ? ssRow.stock : 0, 10) || 0;
+      if (currentSalesStock < qty) {
+        return { ok: false, error: 'INSUFFICIENT_SALES_STOCK', message: `Stok ${product.name} Anda tidak cukup (milik: ${currentSalesStock}, diminta: ${qty})` };
+      }
+
+      let itemPrice = parseFloat(product.price);
+      const customPrice = custPrices.find(cp => cp.customer_id === customer_id && cp.product_id === item.product_id);
+      if (customPrice && customPrice.price !== '') itemPrice = parseFloat(customPrice.price);
+      if (item.price !== undefined && item.price !== null) itemPrice = parseFloat(item.price);
+
+      const discount = parseFloat(item.discount || 0);
+      const lineTotal = (itemPrice * qty) - discount;
+      subtotal += lineTotal;
+      discount_total += discount;
+      total_qty += qty;
+
+      validatedItems.push({ product_id: product.id, name: product.name, qty, price: itemPrice, discount, cost_price: parseFloat(product.cost_price || 0), ssRow });
     }
+
+    const now = new Date();
+    const nowStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
+    const txDate = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, APP_CONFIG.DATE_FORMAT);
+    const txTime = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'HH:mm:ss');
+    const ymd = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'yyyyMMdd');
 
     const previous_balance = parseFloat(customer.balance || 0);
     const total_due = subtotal + previous_balance;
@@ -829,85 +803,70 @@ function createInvoice(payload) {
       finalPaid = 0;
     } else {
       if (finalPaid < 0) finalPaid = 0;
-      if (finalPaid > total_due) {
-        return { ok: false, error: 'OVERPAID', message: 'Pembayaran melebihi total tagihan' };
-      }
+      if (finalPaid > total_due) return { ok: false, error: 'OVERPAID', message: 'Pembayaran melebihi total tagihan' };
     }
 
     const remaining = total_due - finalPaid;
     const credit_limit = parseFloat(customer.credit_limit || 0);
     if (credit_limit > 0 && remaining > credit_limit && !approved_by) {
-      return { ok: false, error: 'CREDIT_LIMIT_EXCEEDED', message: `Sisa tagihan Rp ${remaining.toLocaleString('id-ID')} melebihi batas kredit Rp ${credit_limit.toLocaleString('id-ID')} tanpa persetujuan manajer` };
+      return { ok: false, error: 'CREDIT_LIMIT_EXCEEDED', message: `Sisa tagihan Rp ${remaining.toLocaleString('id-ID')} melebihi batas kredit` };
     }
-
-    const now = new Date();
-    const nowStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
-    const invoiceDate = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, APP_CONFIG.DATE_FORMAT);
-    const invoiceTime = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'HH:mm:ss');
-    const ymd = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'yyyyMMdd');
 
     const termDays = parseInt(customer.term_days, 10) || 14;
     const dueDateObj = new Date(now.getTime() + (termDays * 24 * 60 * 60 * 1000));
     const dueDateStr = Utilities.formatDate(dueDateObj, APP_CONFIG.TIMEZONE, APP_CONFIG.DATE_FORMAT);
 
-    const invoiceNo = getNextCounter(`INV-${order.branch_id}-${ymd}`);
+    const invoiceNo = getNextCounter(`INV-${branch_id || customer.branch_id}-${ymd}`);
     const invoiceId = Utilities.getUuid();
 
-    const newInvoice = {
-      id: invoiceId,
-      invoice_no: invoiceNo,
-      order_id: order_id,
-      invoice_date: invoiceDate,
-      invoice_time: invoiceTime,
-      due_date: dueDateStr,
-      customer_id: customer.id,
-      customer_name: customer.name,
-      customer_address: customer.address,
-      branch_id: order.branch_id,
-      sales_id: order.sales_id,
-      total_qty: total_qty,
-      subtotal: subtotal,
-      discount_total: discount_total,
-      previous_balance: previous_balance,
-      total_due: total_due,
-      paid_amount: finalPaid,
-      remaining: remaining,
-      pay_method: pay_method,
-      note: note || '',
-      approved_by: approved_by || '',
-      created_by: user_id
-    };
-    appendSheetRow('Invoices', newInvoice, ['id', 'invoice_no', 'order_id', 'invoice_date', 'invoice_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by']);
+    // Kurangi SalesStock & catat movement
+    for (const vItem of validatedItems) {
+      const ssRow = vItem.ssRow;
+      const newSalesStock = (parseInt(ssRow.stock, 10) || 0) - vItem.qty;
+      ssRow.stock = newSalesStock;
+      ssRow.updated_at = nowStr;
+      updateSheetRow('SalesStock', ssRow._rowIndex, ssRow, salesStockHeaders);
 
-    // Catat Pembayaran jika paid > 0
+      appendSheetRow('StockMovements', {
+        id: Utilities.getUuid(), date_time: nowStr, product_id: vItem.product_id,
+        change: -vItem.qty, reason: 'Penjualan Kasir', ref: invoiceNo,
+        balance_after: newSalesStock, user_id: user_id, stock_type: 'SALES'
+      }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+    }
+
+    // Simpan Invoice
+    const newInvoice = {
+      id: invoiceId, invoice_no: invoiceNo, tx_date: txDate, tx_time: txTime,
+      due_date: dueDateStr, customer_id: customer.id, customer_name: customer.name,
+      customer_address: customer.address, branch_id: branch_id || customer.branch_id,
+      sales_id: user_id, total_qty, subtotal, discount_total, previous_balance,
+      total_due, paid_amount: finalPaid, remaining, pay_method: pay_method || 'Tunai',
+      note: note || '', approved_by: approved_by || '', created_by: user_id
+    };
+    appendSheetRow('Invoices', newInvoice, ['id', 'invoice_no', 'tx_date', 'tx_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by']);
+
+    // Simpan InvoiceItems
+    for (const vItem of validatedItems) {
+      appendSheetRow('InvoiceItems', {
+        id: Utilities.getUuid(), invoice_id: invoiceId, product_id: vItem.product_id,
+        name: vItem.name, qty: vItem.qty, price: vItem.price,
+        discount: vItem.discount, cost_price: vItem.cost_price
+      }, ['id', 'invoice_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price']);
+    }
+
     if (finalPaid > 0) {
       appendSheetRow('Payments', {
-        id: Utilities.getUuid(),
-        payment_date: invoiceDate,
-        payment_time: invoiceTime,
-        customer_id: customer.id,
-        invoice_id: invoiceId,
-        type: 'Invoice',
-        amount: finalPaid,
-        method: pay_method,
-        note: `Pembayaran ${invoiceNo}`,
-        created_by: user_id
+        id: Utilities.getUuid(), payment_date: txDate, payment_time: txTime,
+        customer_id: customer.id, invoice_id: invoiceId, type: 'Invoice',
+        amount: finalPaid, method: pay_method, note: `Bayar ${invoiceNo}`, created_by: user_id
       }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
     }
 
-    // Update Saldo Pelanggan
     customer.balance = remaining;
-    const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
-    updateSheetRow('Customers', customer._rowIndex, customer, custHeaders);
+    updateSheetRow('Customers', customer._rowIndex, customer, ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active']);
 
-    // Update Status Order Selesai
-    order.status = 'Selesai';
-    order.invoice_id = invoiceId;
-    const orderHeaders = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'];
-    updateSheetRow('Orders', order._rowIndex, order, orderHeaders);
-
-    writeAuditLog(user_id, 'CREATE_INVOICE', { invoice_no: invoiceNo, invoice_id: invoiceId, order_id: order_id, total_due: total_due, remaining: remaining });
-    return { ok: true, data: newInvoice, message: 'Invoice berhasil dibuat' };
+    writeAuditLog(user_id, 'CREATE_SALES_TX', { invoice_no: invoiceNo, invoice_id: invoiceId, total_due, remaining });
+    return { ok: true, data: newInvoice, message: 'Transaksi kasir berhasil disimpan' };
   } finally {
     lock.releaseLock();
   }
@@ -978,58 +937,34 @@ function receivePayment(payload) {
 }
 
 /**
- * 7. createReturn
+ * 7. createReturn — Sales ajukan retur ke admin (status: Menunggu, stok belum berubah)
  */
 function createReturn(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const { invoice_id, items, reason, user_id } = payload;
+    const { invoice_id, items, reason, user_id, branch_id } = payload;
+
+    // Cari invoice untuk validasi
     const invoices = getSheetData('Invoices');
     const invoice = invoices.find(inv => inv.id === invoice_id);
     if (!invoice) return { ok: false, error: 'NOT_FOUND', message: 'Invoice tidak ditemukan' };
 
-    const orderItems = getSheetData('OrderItems').filter(oi => oi.order_id === invoice.order_id);
-    const existingReturns = getSheetData('Returns').filter(r => r.invoice_id === invoice_id);
-    const existingReturnItems = getSheetData('ReturnItems').filter(ri => existingReturns.some(r => r.id === ri.return_id));
+    const invoiceItems = getSheetData('InvoiceItems').filter(ii => ii.invoice_id === invoice_id);
+    const salesStock = getSheetData('SalesStock');
 
-    const products = getSheetData('Products');
-    const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'active'];
-
-    let totalReturnValue = 0;
     const validatedReturnItems = [];
+    let total_qty = 0;
 
     for (const item of items) {
-      const orderItem = orderItems.find(oi => oi.product_id === item.product_id);
-      if (!orderItem) {
-        return { ok: false, error: 'ITEM_NOT_IN_INVOICE', message: `Barang dengan ID ${item.product_id} tidak ada dalam transaksi invoice ini` };
+      const invItem = invoiceItems.find(ii => ii.product_id === item.product_id);
+      if (!invItem) return { ok: false, error: 'ITEM_NOT_IN_INVOICE', message: `Barang ID ${item.product_id} tidak ada dalam transaksi ini` };
+      const qty = parseInt(item.qty, 10);
+      if (isNaN(qty) || qty <= 0 || qty > parseInt(invItem.qty, 10)) {
+        return { ok: false, error: 'INVALID_RETURN_QTY', message: `Qty retur ${invItem.name} tidak valid (maks: ${invItem.qty})` };
       }
-
-      const totalSoldQty = parseInt(orderItem.qty, 10);
-      const alreadyReturnedQty = existingReturnItems
-        .filter(ri => ri.product_id === item.product_id)
-        .reduce((sum, ri) => sum + parseInt(ri.qty, 10), 0);
-
-      const maxReturnableQty = totalSoldQty - alreadyReturnedQty;
-      const requestedQty = parseInt(item.qty, 10);
-
-      if (requestedQty <= 0 || requestedQty > maxReturnableQty) {
-        return { ok: false, error: 'INVALID_RETURN_QTY', message: `Qty retur untuk ${orderItem.name} (${requestedQty}) melebihi sisa retur yang diizinkan (${maxReturnableQty})` };
-      }
-
-      // Hitung harga bersih per unit
-      const origPrice = parseFloat(orderItem.price);
-      const origDiscount = parseFloat(orderItem.discount || 0);
-      const netUnitPrice = origPrice - (origDiscount / totalSoldQty);
-      const itemReturnValue = netUnitPrice * requestedQty;
-      totalReturnValue += itemReturnValue;
-
-      validatedReturnItems.push({
-        product_id: item.product_id,
-        name: orderItem.name,
-        qty: requestedQty,
-        price: netUnitPrice
-      });
+      total_qty += qty;
+      validatedReturnItems.push({ product_id: item.product_id, name: invItem.name, qty, price: parseFloat(invItem.price) });
     }
 
     const now = new Date();
@@ -1038,88 +973,117 @@ function createReturn(payload) {
     const ymd = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'yyyyMMdd');
 
     const returnId = Utilities.getUuid();
-    const returnNo = getNextCounter(`RET-${invoice.branch_id}-${ymd}`);
+    const returnNo = getNextCounter(`RET-${branch_id || invoice.branch_id}-${ymd}`);
 
-    // Tambah stok kembali
-    for (const vItem of validatedReturnItems) {
-      const prod = products.find(p => p.id === vItem.product_id);
-      if (prod) {
-        const newStock = (parseInt(prod.stock, 10) || 0) + vItem.qty;
-        prod.stock = newStock;
-        updateSheetRow('Products', prod._rowIndex, prod, prodHeaders);
-
-        appendSheetRow('StockMovements', {
-          id: Utilities.getUuid(),
-          date_time: nowStr,
-          product_id: prod.id,
-          change: vItem.qty,
-          reason: 'Retur',
-          ref: returnNo,
-          balance_after: newStock,
-          user_id: user_id
-        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id']);
-      }
-    }
-
-    // Sesuaikan Saldo Pelanggan atau Refund
-    const customers = getSheetData('Customers');
-    const customer = customers.find(c => c.id === invoice.customer_id);
-    let cashRefund = 0;
-
-    if (customer) {
-      const curBalance = parseFloat(customer.balance || 0);
-      if (totalReturnValue <= curBalance) {
-        customer.balance = curBalance - totalReturnValue;
-      } else {
-        cashRefund = totalReturnValue - curBalance;
-        customer.balance = 0;
-      }
-      const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
-      updateSheetRow('Customers', customer._rowIndex, customer, custHeaders);
-    }
-
-    // Jika ada pengembalian uang lebih, catat di Payments dengan amount negatif
-    if (cashRefund > 0) {
-      appendSheetRow('Payments', {
-        id: Utilities.getUuid(),
-        payment_date: dateStr,
-        payment_time: Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'HH:mm:ss'),
-        customer_id: invoice.customer_id,
-        invoice_id: invoice.id,
-        type: 'Retur',
-        amount: -cashRefund,
-        method: 'Tunai',
-        note: `Pengembalian dana retur ${returnNo}`,
-        created_by: user_id
-      }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
-    }
-
-    // Simpan Returns & ReturnItems
+    // Simpan Returns dengan status Menunggu — stok BELUM berubah
     const newReturn = {
-      id: returnId,
-      return_no: returnNo,
-      invoice_id: invoice_id,
-      customer_id: invoice.customer_id,
-      date: dateStr,
-      reason: reason || '',
-      total: totalReturnValue,
-      user_id: user_id
+      id: returnId, return_no: returnNo, type: 'SALES_TO_ADMIN',
+      ref_id: invoice_id, sales_id: invoice.sales_id,
+      branch_id: branch_id || invoice.branch_id,
+      date: dateStr, reason: reason || '', status: 'Menunggu',
+      approved_by: '', approved_at: '', total_qty, user_id
     };
-    appendSheetRow('Returns', newReturn, ['id', 'return_no', 'invoice_id', 'customer_id', 'date', 'reason', 'total', 'user_id']);
+    appendSheetRow('Returns', newReturn, ['id', 'return_no', 'type', 'ref_id', 'sales_id', 'branch_id', 'date', 'reason', 'status', 'approved_by', 'approved_at', 'total_qty', 'user_id']);
 
     for (const vItem of validatedReturnItems) {
       appendSheetRow('ReturnItems', {
-        id: Utilities.getUuid(),
-        return_id: returnId,
-        product_id: vItem.product_id,
-        name: vItem.name,
-        qty: vItem.qty,
-        price: vItem.price
+        id: Utilities.getUuid(), return_id: returnId, product_id: vItem.product_id,
+        name: vItem.name, qty: vItem.qty, price: vItem.price
       }, ['id', 'return_id', 'product_id', 'name', 'qty', 'price']);
     }
 
-    writeAuditLog(user_id, 'CREATE_RETURN', { return_no: returnNo, invoice_id: invoice_id, total: totalReturnValue, refund: cashRefund });
-    return { ok: true, data: { ...newReturn, cash_refund: cashRefund }, message: 'Retur barang berhasil diproses' };
+    writeAuditLog(user_id, 'CREATE_RETURN_REQUEST', { return_no: returnNo, invoice_id, total_qty });
+    return { ok: true, data: newReturn, message: 'Permintaan retur berhasil dibuat, menunggu persetujuan admin' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 7b. approveReturn — Admin setujui retur: SalesStock berkurang, stok admin bertambah
+ */
+function approveReturn(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const { return_id, admin_id } = payload;
+    const returns = getSheetData('Returns');
+    const ret = returns.find(r => r.id === return_id);
+    if (!ret) return { ok: false, error: 'NOT_FOUND', message: 'Data retur tidak ditemukan' };
+    if (ret.status !== 'Menunggu') return { ok: false, error: 'INVALID_STATUS', message: `Retur sudah berstatus ${ret.status}` };
+
+    const returnItems = getSheetData('ReturnItems').filter(ri => ri.return_id === return_id);
+    const products = getSheetData('Products');
+    const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'image', 'active'];
+    const salesStock = getSheetData('SalesStock');
+    const salesStockHeaders = ['sales_id', 'product_id', 'stock', 'updated_at'];
+    const nowStr = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
+    const salesId = ret.sales_id;
+
+    for (const ri of returnItems) {
+      const qty = parseInt(ri.qty, 10) || 0;
+
+      // 1. Kurangi SalesStock
+      const ssRow = salesStock.find(s => s.sales_id === salesId && s.product_id === ri.product_id);
+      if (ssRow) {
+        const newSalesStock = Math.max(0, (parseInt(ssRow.stock, 10) || 0) - qty);
+        ssRow.stock = newSalesStock;
+        ssRow.updated_at = nowStr;
+        updateSheetRow('SalesStock', ssRow._rowIndex, ssRow, salesStockHeaders);
+        appendSheetRow('StockMovements', {
+          id: Utilities.getUuid(), date_time: nowStr, product_id: ri.product_id,
+          change: -qty, reason: 'Retur ke Admin', ref: ret.return_no,
+          balance_after: newSalesStock, user_id: salesId, stock_type: 'SALES'
+        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+      }
+
+      // 2. Tambah stok admin/gudang
+      const prod = products.find(p => p.id === ri.product_id);
+      if (prod) {
+        const newAdminStock = (parseInt(prod.stock, 10) || 0) + qty;
+        prod.stock = newAdminStock;
+        updateSheetRow('Products', prod._rowIndex, prod, prodHeaders);
+        appendSheetRow('StockMovements', {
+          id: Utilities.getUuid(), date_time: nowStr, product_id: ri.product_id,
+          change: qty, reason: 'Terima Retur', ref: ret.return_no,
+          balance_after: newAdminStock, user_id: admin_id, stock_type: 'ADMIN'
+        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+      }
+    }
+
+    ret.status = 'Disetujui';
+    ret.approved_by = admin_id;
+    ret.approved_at = nowStr;
+    updateSheetRow('Returns', ret._rowIndex, ret, ['id', 'return_no', 'type', 'ref_id', 'sales_id', 'branch_id', 'date', 'reason', 'status', 'approved_by', 'approved_at', 'total_qty', 'user_id']);
+
+    writeAuditLog(admin_id, 'APPROVE_RETURN', { return_id, return_no: ret.return_no, sales_id: salesId });
+    return { ok: true, data: ret, message: 'Retur disetujui, stok telah diperbarui' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 7c. rejectReturn — Admin tolak retur (stok tidak berubah)
+ */
+function rejectReturn(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const { return_id, admin_id, reason } = payload;
+    const returns = getSheetData('Returns');
+    const ret = returns.find(r => r.id === return_id);
+    if (!ret) return { ok: false, error: 'NOT_FOUND', message: 'Data retur tidak ditemukan' };
+    if (ret.status !== 'Menunggu') return { ok: false, error: 'INVALID_STATUS', message: `Retur sudah berstatus ${ret.status}` };
+
+    ret.status = 'Ditolak';
+    ret.approved_by = admin_id;
+    ret.approved_at = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
+    ret.reason = (ret.reason ? ret.reason + ' | ' : '') + 'Ditolak: ' + (reason || '');
+    updateSheetRow('Returns', ret._rowIndex, ret, ['id', 'return_no', 'type', 'ref_id', 'sales_id', 'branch_id', 'date', 'reason', 'status', 'approved_by', 'approved_at', 'total_qty', 'user_id']);
+
+    writeAuditLog(admin_id, 'REJECT_RETURN', { return_id, return_no: ret.return_no, reason });
+    return { ok: true, data: ret, message: 'Retur telah ditolak' };
   } finally {
     lock.releaseLock();
   }

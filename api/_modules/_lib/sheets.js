@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { getCached, setCached, clearCache } from './cache.js';
 import { ApiError } from './errors.js';
+import { callGas } from './gas.js';
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1nq3PVJm0--u34XKWS4KzOchVPmXbQPcdW5EJzXWTF9Y';
 const SA_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -1918,6 +1919,9 @@ export async function getTabRows(tabName, forceFresh = false) {
 /**
  * Membaca banyak tab sekaligus dengan values.batchGet
  */
+// Tab-tab transaksional yang hanya bisa dibaca via GAS (bukan gviz/tq publik)
+const GAS_ONLY_TABS = ['Orders', 'OrderItems', 'SalesStock', 'Returns', 'AuditLog', 'Invoices', 'Purchases', 'SalesTx'];
+
 export async function getTabsBatch(tabNames) {
   const result = {};
   const missingTabs = [];
@@ -1936,7 +1940,20 @@ export async function getTabsBatch(tabNames) {
   // Jika Google Service Account belum dikonfigurasi, gunakan fallback aman lokal
   if (!SA_EMAIL || !SA_KEY) {
     for (const tab of missingTabs) {
-      result[tab] = await getTabRows(tab);
+      // Tab transaksional harus dibaca via GAS (private, tidak bisa gviz/tq)
+      if (GAS_ONLY_TABS.includes(tab)) {
+        try {
+          const gasResult = await callGas('getTabData', { tabName: tab });
+          const rows = Array.isArray(gasResult) ? gasResult : [];
+          setCached(tab, rows, 10); // cache pendek 10 detik agar data fresh
+          result[tab] = rows;
+        } catch (e) {
+          console.error(`[GAS READ ERROR] Tab ${tab}:`, e.message);
+          result[tab] = [];
+        }
+      } else {
+        result[tab] = await getTabRows(tab);
+      }
     }
     return result;
   }
@@ -1974,7 +1991,6 @@ export async function getTabsBatch(tabNames) {
   return result;
 }
 
-import { callGas } from './gas.js';
 
 /**
  * Menulis baris baru (append)

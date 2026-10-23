@@ -4,6 +4,9 @@ import { clearCache } from './cache.js';
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbzfHrbey6APjbgAqxSHqcWOCSX48fg0S6wUMl6WF-6vyE_txbTQc9kXTBIL6GFv12kV/exec';
 const APPS_SCRIPT_SECRET = process.env.APPS_SCRIPT_SECRET || 'rh_frozen_secret_app_key_2026_secure';
 
+// Aksi baca-saja yang tidak perlu clear cache
+const READ_ONLY_ACTIONS = ['getTabData'];
+
 /**
  * Memanggil fungsi transaksi atomik di Google Apps Script Web App
  */
@@ -47,7 +50,10 @@ export async function callGas(action, payload = {}) {
   }
 
   // Setiap penulisan via GAS berpotensi mengubah data transaksi & stok, bersihkan cache
-  clearCache();
+  // Kecuali aksi baca-saja (getTabData) yang hanya membaca tanpa mengubah data
+  if (!READ_ONLY_ACTIONS.includes(action)) {
+    clearCache();
+  }
 
   return result.data;
 }

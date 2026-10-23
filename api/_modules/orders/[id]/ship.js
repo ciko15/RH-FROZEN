@@ -35,32 +35,82 @@ export default async function handler(req, res) {
         throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan');
       }
 
-      // Kurangi stok barang yang ada di order jika order belum pernah dikirim / selesai
+      // Kurangi stok admin dan tambah SalesStock jika order berstatus Proses
       if (order.status === 'Proses') {
         const orderItems = (await getTabRows('OrderItems', true)).filter(oi => oi.order_id === orderId);
         const products = await getTabRows('Products', true);
         const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'image', 'active'];
+        const salesStocks = await getTabRows('SalesStock', true);
+        const salesStockHeaders = ['sales_id', 'product_id', 'stock', 'updated_at'];
+        const nowIso = new Date().toISOString().replace('T', ' ').substring(0, 19);
+        const salesId = order.sales_id;
 
         for (const item of orderItems) {
+          const qty = parseInt(item.qty || 0, 10);
           const prod = products.find(p => p.id === item.product_id);
+
+          // 1. Kurangi stok admin
           if (prod && prod._rowIndex) {
             const currentStock = parseInt(prod.stock || 0, 10);
-            const qty = parseInt(item.qty || 0, 10);
             const newStock = Math.max(0, currentStock - qty);
             prod.stock = newStock;
             await updateRow('Products', prod._rowIndex, prod, prodHeaders);
 
-            // Catat log perpindahan stok
             await appendRow('StockMovements', {
               id: crypto.randomUUID(),
-              date_time: new Date().toISOString().replace('T', ' ').substring(0, 19),
+              date_time: nowIso,
               product_id: prod.id,
               change: -qty,
-              reason: 'Kirim Order',
+              reason: 'Kirim ke Sales',
               ref: order.order_no || order.id,
               balance_after: newStock,
-              user_id: authUser.id
-            }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id']);
+              user_id: authUser.id,
+              stock_type: 'ADMIN'
+            }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+          }
+
+          // 2. Tambah stok sales
+          if (salesId) {
+            const ssRow = salesStocks.find(s => s.sales_id === salesId && s.product_id === item.product_id);
+            if (ssRow && ssRow._rowIndex) {
+              const currentSalesStock = parseInt(ssRow.stock || 0, 10);
+              const newSalesStock = currentSalesStock + qty;
+              ssRow.stock = newSalesStock;
+              ssRow.updated_at = nowIso;
+              await updateRow('SalesStock', ssRow._rowIndex, ssRow, salesStockHeaders);
+
+              await appendRow('StockMovements', {
+                id: crypto.randomUUID(),
+                date_time: nowIso,
+                product_id: item.product_id,
+                change: qty,
+                reason: 'Terima dari Admin',
+                ref: order.order_no || order.id,
+                balance_after: newSalesStock,
+                user_id: salesId,
+                stock_type: 'SALES'
+              }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+            } else {
+              const newSalesStock = qty;
+              await appendRow('SalesStock', {
+                sales_id: salesId,
+                product_id: item.product_id,
+                stock: newSalesStock,
+                updated_at: nowIso
+              }, salesStockHeaders);
+
+              await appendRow('StockMovements', {
+                id: crypto.randomUUID(),
+                date_time: nowIso,
+                product_id: item.product_id,
+                change: qty,
+                reason: 'Terima dari Admin',
+                ref: order.order_no || order.id,
+                balance_after: newSalesStock,
+                user_id: salesId,
+                stock_type: 'SALES'
+              }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+            }
           }
         }
       }

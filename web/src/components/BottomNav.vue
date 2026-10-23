@@ -1,36 +1,36 @@
 <template>
   <nav class="bottom-nav">
-    <!-- Menu untuk Semua Role -->
+    <!-- 1. Dashboard -->
     <router-link to="/dashboard" class="nav-item" active-class="active">
       <Icon name="dashboard" size="20" class="nav-svg" />
       <span class="label">Dashboard</span>
     </router-link>
 
-    <!-- Menu Khusus Sales: 1. Order Pelanggan -->
+    <!-- 2. Permintaan Barang (Minta ke Admin / Admin Kirim) -->
     <router-link to="/orders" class="nav-item" active-class="active">
       <Icon name="orders" size="20" class="nav-svg" />
-      <span class="label">{{ isSales ? 'Order' : 'Order' }}</span>
+      <span class="label">{{ isSales ? 'Minta Barang' : 'Permintaan' }}</span>
     </router-link>
 
-    <!-- Menu Khusus Sales: 2. Barang Dikirim / Penjualan Kasir -->
+    <!-- 3. Kasir Penjualan (End-Customer dari Stok Sales) -->
     <router-link to="/sales" class="nav-item" active-class="active">
       <Icon name="sales" size="20" class="nav-svg" />
-      <span class="label">{{ isSales ? 'Kirim/Faktur' : 'Penjualan' }}</span>
+      <span class="label">Kasir</span>
     </router-link>
 
-    <!-- Menu Khusus Sales: 3. Pelanggan Saya -->
-    <router-link v-if="isSales" to="/customers" class="nav-item" active-class="active">
-      <Icon name="customers" size="20" class="nav-svg" />
-      <span class="label">Pelanggan</span>
-    </router-link>
-
-    <!-- Menu Stok Produk (Dapat dilihat oleh semua role termasuk Sales) -->
+    <!-- 4. Stok (Stok Saya / Stok Admin) -->
     <router-link to="/stock" class="nav-item" active-class="active">
       <Icon name="stock" size="20" class="nav-svg" />
       <span class="label">Stok</span>
     </router-link>
 
-    <!-- Menu Lainnya (Master data, ganti pass, logout) -->
+    <!-- 5. Retur Barang (Approval Admin) -->
+    <router-link to="/returns" class="nav-item" active-class="active">
+      <Icon name="package" size="20" class="nav-svg" />
+      <span class="label">Retur</span>
+    </router-link>
+
+    <!-- 6. Lainnya -->
     <router-link to="/more" class="nav-item" active-class="active">
       <Icon name="settings" size="20" class="nav-svg" />
       <span class="label">Lainnya</span>

@@ -1,309 +1,122 @@
 <template>
   <div class="orders-page">
-    <!-- Header bar pencarian & tombol tambah -->
     <div class="header-action">
-      <div class="search-input-wrapper">
-        <Icon name="search" size="16" class="search-icon" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Cari pelanggan / nomor order..."
-          class="search-input"
-        />
+      <div class="search-wrap">
+        <Icon name="search" size="16" />
+        <input v-model="searchQuery" type="text" placeholder="Cari nomor permintaan / sales..." />
       </div>
-      <router-link to="/orders/new" class="btn-add-order" v-if="canCreateOrder">
+      <router-link v-if="isSales" to="/orders/new" class="btn-add">
         <Icon name="plus" size="16" />
-        <span>Buat Order Baru</span>
+        <span>Minta Barang</span>
       </router-link>
     </div>
 
-    <!-- Tab filter status -->
     <div class="status-tabs">
-      <button
-        v-for="tab in tabs"
-        :key="tab"
-        class="tab-btn"
-        :class="{ active: currentTab === tab }"
-        @click="currentTab = tab"
-      >
+      <button v-for="tab in tabs" :key="tab" class="tab-btn" :class="{ active: currentTab === tab }" @click="currentTab = tab">
         {{ tab }}
       </button>
     </div>
 
-    <!-- Antrean Offline (jika ada) -->
-    <div v-if="offlineQueue.length > 0" class="offline-section">
-      <div class="offline-header">
-        <span>Menunggu Sinkronisasi ({{ offlineQueue.length }})</span>
-        <button class="btn-sync" @click="syncOfflineOrders" :disabled="syncing">
-          {{ syncing ? 'Mengirim...' : 'Kirim Sekarang' }}
-        </button>
-      </div>
-      <div
-        v-for="item in offlineQueue"
-        :key="item.client_key"
-        class="card order-card offline-card"
-      >
-        <div class="order-top">
-          <span class="order-no"># {{ item.client_key.substring(0, 8) }}</span>
-          <span class="badge" :class="item.status === 'Gagal' ? 'badge-gagal' : 'badge-menunggu'">
-            {{ item.status }}
-          </span>
-        </div>
-        <div class="order-cust">{{ item.customer_name || 'Pelanggan' }}</div>
-        <div class="order-bottom">
-          <span class="order-date">{{ item.created_at.substring(0, 10) }}</span>
-          <span class="order-items-count">{{ item.items?.length }} Barang</span>
-        </div>
-        <p v-if="item.fail_reason" class="fail-reason">Alasan: {{ item.fail_reason }}</p>
-      </div>
-    </div>
-
-    <!-- Daftar Order Online -->
-    <div v-if="loading && orders.length === 0" class="loading-state">
-      <p>Memuat daftar order...</p>
-    </div>
-
-    <div v-else-if="orders.length === 0" class="empty-state">
-      <div class="empty-icon-box"><Icon name="orders" size="38" /></div>
-      <h3>Belum Ada Order</h3>
-      <p>Tidak ada order pada status ini.</p>
-    </div>
-
-    <div v-else class="order-list-wrapper">
-      <div class="order-list">
-        <div
-          v-for="order in paginatedOrders"
-          :key="order.id"
-          class="card order-card"
-          @click="openDetail(order)"
-        >
-          <div class="order-top">
-            <span class="order-no"><Icon name="package" size="14" /> {{ order.order_no }}</span>
-            <span class="badge" :class="getStatusBadgeClass(order.status)">
-              {{ order.status }}
-            </span>
-          </div>
-          <div class="order-cust">{{ order.customer_name }}</div>
-          <div v-if="order.shortage_total > 0" class="shortage-badge">
-            ⚠️ Stok kurang {{ order.shortage_total }} pcs ({{ order.shortage_items }} barang)
-          </div>
-          <div class="order-bottom">
-            <span class="order-date">{{ order.order_date }} {{ order.order_time }}</span>
-            <span class="order-total">Rp {{ formatNumber(order.total_amount) }}</span>
+    <!-- REKAPAN PRODUK BELUM TERKIRIM (KHUSUS ADMIN) -->
+    <div v-if="isAdmin && pendingSummary.length > 0" class="card pending-summary-card" :class="{ 'has-shortage': shortageCount > 0 }">
+      <div class="summary-head" @click="showSummaryDetails = !showSummaryDetails">
+        <div class="summary-title-wrap">
+          <span class="summary-icon">📦</span>
+          <div>
+            <div class="summary-title">Rekap Orderan Belum Terkirim (Total Semua Sales)</div>
+            <small class="summary-subtitle">{{ pendingSummary.length }} jenis produk · {{ totalPendingQty }} pcs harus disiapkan</small>
           </div>
         </div>
-      </div>
-
-      <!-- Pagination Orders -->
-      <div v-if="orderTotalPages > 1" class="pagination-bar">
-        <span class="page-info">
-          Menampilkan {{ (orderCurrentPage - 1) * orderPageSize + 1 }} - {{ Math.min(orderCurrentPage * orderPageSize, orders.length) }} dari {{ orders.length }} pesanan
-        </span>
-        <div class="page-buttons">
-          <button
-            class="btn-page"
-            :disabled="orderCurrentPage === 1"
-            @click="orderCurrentPage--"
-          >
-            &laquo; Sebelumnya
-          </button>
-          <span class="page-num">Hal {{ orderCurrentPage }} / {{ orderTotalPages }}</span>
-          <button
-            class="btn-page"
-            :disabled="orderCurrentPage === orderTotalPages"
-            @click="orderCurrentPage++"
-          >
-            Berikutnya &raquo;
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          <span v-if="shortageCount > 0" class="shortage-alert-badge">⚠️ {{ shortageCount }} barang stok kurang</span>
+          <button type="button" class="btn-toggle-summary">
+            {{ showSummaryDetails ? 'Sembunyikan ▲' : 'Lihat Detail ▼' }}
           </button>
         </div>
       </div>
-    </div>
 
-    <!-- Bottom Sheet Detail Order -->
-    <div v-if="selectedOrder" class="sheet-overlay" @click.self="selectedOrder = null">
-      <div class="sheet-content">
-        <div class="sheet-header">
-          <div class="sheet-title">
-            <h3>{{ selectedOrder.order_no }}</h3>
-            <span class="badge" :class="getStatusBadgeClass(selectedOrder.status)">
-              {{ selectedOrder.status }}
-            </span>
-          </div>
-          <button class="sheet-close" @click="selectedOrder = null"><Icon name="x" size="18" /></button>
-        </div>
-
-        <div class="sheet-body">
-          <div class="info-row">
-            <span>Pelanggan:</span>
-            <strong>{{ selectedOrder.customer?.name || selectedOrder.customer_name }}</strong>
-          </div>
-          <div class="info-row">
-            <span>No. WhatsApp:</span>
-            <span class="phone-link">
-              <strong>{{ selectedOrder.customer_phone || selectedOrder.customer?.phone || '-' }}</strong>
-              <button
-                v-if="canEditOrder"
-                class="btn-edit-phone-inline"
-                @click="openEditOrderModal"
-                title="Edit Nomor HP"
-              >
-                <Icon name="edit" size="13" /> Ubah
-              </button>
-              <a
-                v-if="selectedOrder.customer_phone || selectedOrder.customer?.phone"
-                :href="'https://wa.me/' + (selectedOrder.customer_phone || selectedOrder.customer?.phone || '').replace(/\D/g, '').replace(/^0/, '62')"
-                target="_blank"
-                class="wa-tag"
-              >
-                <Icon name="message-circle" size="13" /> Hubungi
-              </a>
-            </span>
-          </div>
-          <div class="info-row">
-            <span>Tanggal:</span>
-            <span>{{ selectedOrder.order_date }} {{ selectedOrder.order_time }}</span>
-          </div>
-          <div class="info-row" v-if="selectedOrder.sales_name">
-            <span>Sales:</span>
-            <span>{{ selectedOrder.sales_name }}</span>
-          </div>
-          <div class="info-row" v-if="selectedOrder.note">
-            <span>Catatan:</span>
-            <span class="text-muted">{{ selectedOrder.note }}</span>
-          </div>
-
-          <!-- Tabel Barang -->
-          <h4 class="items-title">Daftar Barang</h4>
-          <div class="items-table">
-            <div
-              v-for="it in selectedOrder.items"
-              :key="it.id"
-              class="item-row"
-            >
-              <div class="item-info">
-                <span class="item-name">{{ it.emoji }} {{ it.name }}</span>
-                <span class="item-calc">{{ it.qty }} x Rp {{ formatNumber(it.price) }}</span>
-                <small v-if="it.discount > 0" class="item-disc">Diskon: Rp {{ formatNumber(it.discount) }}</small>
-                <small v-if="it.shortage > 0" class="item-shortage">⚠️ Kurang {{ it.shortage }} dari {{ it.qty }} (tersedia {{ it.qty - it.shortage }})</small>
-              </div>
-              <span class="item-total">Rp {{ formatNumber(it.line_total) }}</span>
+      <div v-if="showSummaryDetails" class="summary-body">
+        <div v-for="ps in pendingSummary" :key="ps.product_id" class="summary-item" :class="{ 'shortage-item': ps.shortage > 0 }">
+          <div class="sum-prod-head">
+            <div class="sum-name-col">
+              <strong>{{ ps.name }}</strong>
+              <!-- Badge stok kurang atau cukup -->
+              <span v-if="ps.shortage > 0" class="stock-badge stock-badge--low">⚠️ Stok kurang {{ ps.shortage }} pcs</span>
+              <span v-else class="stock-badge stock-badge--ok">✅ Stok cukup</span>
+            </div>
+            <div class="sum-qty-col">
+              <span class="sum-prod-total">Dibutuhkan: <strong>{{ ps.total_qty }} pcs</strong></span>
+              <span class="sum-admin-stock" :class="ps.shortage > 0 ? 'stock-low' : 'stock-ok'">Stok admin: {{ ps.admin_stock }} pcs</span>
             </div>
           </div>
-
-          <div class="order-summary-row">
-            <span>Total Belanja:</span>
-            <span class="total-big">Rp {{ formatNumber(selectedOrder.total_amount) }}</span>
+          <!-- Rincian per sales -->
+          <div class="sum-breakdown">
+            <span v-for="(sb, i) in ps.sales_breakdown" :key="i" class="breakdown-chip">
+              👤 {{ sb.sales_name }}: <strong>{{ sb.qty }} pcs</strong> ({{ sb.order_no }})
+            </span>
           </div>
-
-          <!-- Aksi Sesuai Role & Status -->
-          <div class="action-buttons">
-            <button
-              v-if="canEditOrder"
-              class="btn-action btn-edit-order"
-              @click="openEditOrderModal"
-            >
-              <Icon name="edit" size="16" />
-              <span>Edit Order & No HP</span>
-            </button>
-
-            <button
-              v-if="canShipOrder"
-              class="btn-action btn-ship"
-              @click="handleShip"
-              :disabled="actionLoading"
-            >
-              <Icon name="truck" size="16" />
-              <span>Tandai Dikirim</span>
-            </button>
-
-            <button
-              v-if="canCancelOrder"
-              class="btn-action btn-cancel"
-              @click="handleCancel"
-              :disabled="actionLoading"
-            >
-              <Icon name="x" size="16" />
-              <span>Batalkan Order</span>
-            </button>
-
-            <!-- Tombol Cetak Nota Pesanan (Bisa Dicetak Walau Belum Bayar) -->
-            <button
-              v-if="selectedOrder.status !== 'Dibatalkan'"
-              class="btn-action btn-print-order"
-              @click="openOrderInvoicePreview"
-            >
-              <Icon name="printer" size="16" />
-              <span>{{ selectedOrder.invoice_id || selectedOrder.status === 'Selesai' ? 'Lihat / Cetak Struk Invoice' : 'Cetak / Kirim Nota (Belum Bayar)' }}</span>
-            </button>
-
-            <button
-              v-if="canPayOrder"
-              class="btn-action btn-pay"
-              @click="goToPayment"
-            >
-              <Icon name="cash" size="16" />
-              <span>Proses Pembayaran</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Action bar bawah untuk menutup detail pesanan -->
-        <div class="sheet-footer">
-          <button class="btn-secondary" style="flex:1;" @click="selectedOrder = null">
-            <Icon name="x" size="16" /> Tutup Rincian
-          </button>
         </div>
       </div>
     </div>
 
-    <!-- Modal Form Edit Order (Admin & Manajer) -->
-    <div v-if="showEditModal" class="sheet-overlay" @click.self="showEditModal = false">
+    <div v-if="loading && orders.length === 0" class="empty">Memuat permintaan...</div>
+    <div v-else-if="filteredOrders.length === 0" class="empty">
+      <Icon name="orders" size="38" />
+      <h3>Belum Ada Permintaan</h3>
+      <p>{{ isSales ? 'Tekan "Minta Barang" untuk meminta stok ke admin.' : 'Belum ada permintaan dari sales.' }}</p>
+    </div>
+
+    <div v-else class="order-list">
+      <div v-for="o in filteredOrders" :key="o.id" class="card order-card" @click="selected = o">
+        <div class="order-top">
+          <span class="order-no"><Icon name="package" size="14" /> {{ o.order_no }}</span>
+          <span class="badge" :class="badgeClass(o.status)">{{ o.status }}</span>
+        </div>
+        <div class="order-sales">👤 {{ o.sales_name }}</div>
+        <div v-if="o.shortage_total > 0" class="shortage">⚠️ Stok admin kurang {{ o.shortage_total }} pcs ({{ o.shortage_items }} barang)</div>
+        <div class="order-bottom">
+          <span>{{ o.order_date }} {{ o.order_time }}</span>
+          <strong>{{ o.total_qty }} pcs · {{ o.items_count }} barang</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail -->
+    <div v-if="selected" class="sheet-overlay" @click.self="selected = null">
       <div class="sheet-content">
         <div class="sheet-header">
-          <h3>Edit Order {{ selectedOrder?.order_no }}</h3>
-          <button class="sheet-close" @click="showEditModal = false"><Icon name="x" size="18" /></button>
+          <div>
+            <h3>{{ selected.order_no }}</h3>
+            <span class="badge" :class="badgeClass(selected.status)">{{ selected.status }}</span>
+          </div>
+          <button class="sheet-close" @click="selected = null"><Icon name="x" size="18" /></button>
         </div>
         <div class="sheet-body">
-          <div class="form-group">
-            <label>Nama Pelanggan</label>
-            <input v-model="editForm.customer_name" type="text" placeholder="Nama Pelanggan" />
-          </div>
-          <div class="form-group">
-            <label>Nomor HP / WhatsApp Tujuan *</label>
-            <input v-model="editForm.customer_phone" type="tel" placeholder="Contoh: 081234567890" />
-            <small class="hint">Nomor ini yang akan dihubungi saat kirim struk / WA</small>
-          </div>
-          <div class="form-group">
-            <label>Catatan Order</label>
-            <textarea v-model="editForm.note" rows="2" placeholder="Catatan pesanan / alamat pengiriman..."></textarea>
-          </div>
-        </div>
+          <div class="info-row"><span>Sales</span><strong>{{ selected.sales_name }}</strong></div>
+          <div class="info-row"><span>Tanggal</span><span>{{ selected.order_date }} {{ selected.order_time }}</span></div>
+          <div v-if="selected.note" class="info-row"><span>Catatan</span><span>{{ selected.note }}</span></div>
 
-        <div class="sheet-footer">
-          <button class="btn-secondary" @click="showEditModal = false">
-            <Icon name="x" size="16" /> Tutup
-          </button>
-          <button class="btn-primary" @click="submitEditOrder" :disabled="editLoading">
-            <Icon name="check" size="16" /> {{ editLoading ? 'Menyimpan...' : 'Simpan Perubahan' }}
-          </button>
-        </div>
-      </div>
-    </div>
+          <h4 class="items-title">Barang Diminta</h4>
+          <div v-for="it in selected.items" :key="it.id" class="item-row">
+            <div>
+              <div class="item-name">{{ it.product_name || it.name }}</div>
+              <small v-if="it.shortage > 0" class="text-danger">⚠️ Stok admin kurang {{ it.shortage }}</small>
+            </div>
+            <strong>{{ it.qty }} pcs</strong>
+          </div>
+          <div class="info-row total"><span>Total</span><strong>{{ selected.total_qty }} pcs</strong></div>
 
-    <!-- Modal Lihat Invoice Penuh (dari menu Pesanan) -->
-    <div v-if="orderInvoiceModal" class="sheet-overlay" @click.self="orderInvoiceModal = null">
-      <div class="sheet-content sheet-inv">
-        <div class="sheet-header">
-          <h3>Invoice {{ orderInvoiceModal.invoice_no }}</h3>
-          <button class="sheet-close" @click="orderInvoiceModal = null"><Icon name="x" size="18" /></button>
-        </div>
-        <div class="sheet-body">
-          <InvoiceView :invoice="orderInvoiceModal" />
-        </div>
-        <div class="sheet-footer">
-          <button class="btn-secondary" style="flex:1;" @click="orderInvoiceModal = null">
-            <Icon name="x" size="16" /> Tutup Invoice
-          </button>
+          <div class="action-buttons">
+            <button v-if="canShip" class="btn-action btn-ship" :disabled="actionLoading" @click="handleShip">
+              <Icon name="truck" size="16" />
+              <span>{{ actionLoading ? 'Memproses...' : 'Kirim ke Sales' }}</span>
+            </button>
+            <button v-if="canCancel" class="btn-action btn-cancel" :disabled="actionLoading" @click="handleCancel">
+              <Icon name="x" size="16" />
+              <span>Batalkan</span>
+            </button>
+          </div>
+          <p v-if="canShip" class="hint">Saat dikirim: stok admin berkurang, stok {{ selected.sales_name }} bertambah.</p>
         </div>
       </div>
     </div>
@@ -311,664 +124,261 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onMounted } from 'vue';
 import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
-import { useOfflineStore } from '../stores/offline.js';
 import Icon from '../components/Icon.vue';
-import InvoiceView from '../components/InvoiceView.vue';
 
-const router = useRouter();
 const authStore = useAuthStore();
 const appStore = useAppStore();
-const offlineStore = useOfflineStore();
-const orderInvoiceModal = ref(null);
+const role = computed(() => authStore.user?.role);
+const isSales = computed(() => role.value === 'sales');
+const isAdmin = computed(() => ['admin', 'manajer'].includes(role.value));
 
-const user = computed(() => authStore.user);
-const canCreateOrder = computed(() => ['admin', 'sales'].includes(user.value?.role));
-
-const tabs = ['Semua', 'Proses', 'Dikirim', 'Selesai'];
-const currentTab = ref('Semua');
+const tabs = ['Semua', 'Proses', 'Dikirim', 'Dibatalkan'];
+const currentTab = ref('Proses');
 const searchQuery = ref('');
-const loading = ref(false);
-const actionLoading = ref(false);
 const orders = ref([]);
-const selectedOrder = ref(null);
+const pendingSummary = ref([]);
+const showSummaryDetails = ref(true);
+const loading = ref(false);
+const selected = ref(null);
+const actionLoading = ref(false);
 
-// Pagination Orders (10 per halaman)
-const orderCurrentPage = ref(1);
-const orderPageSize = ref(10);
+const totalPendingQty = computed(() => pendingSummary.value.reduce((s, it) => s + (it.total_qty || 0), 0));
+const shortageCount = computed(() => pendingSummary.value.filter(ps => ps.shortage > 0).length);
 
-const orderTotalPages = computed(() => {
-  return Math.max(1, Math.ceil(orders.value.length / orderPageSize.value));
+
+const filteredOrders = computed(() => {
+  const q = searchQuery.value.toLowerCase().trim();
+  return orders.value
+    .filter(o => currentTab.value === 'Semua' || o.status === currentTab.value)
+    .filter(o => !q || (o.order_no || '').toLowerCase().includes(q) || (o.sales_name || '').toLowerCase().includes(q));
 });
 
-const paginatedOrders = computed(() => {
-  const start = (orderCurrentPage.value - 1) * orderPageSize.value;
-  return orders.value.slice(start, start + orderPageSize.value);
-});
+const canShip = computed(() => isAdmin.value && selected.value?.status === 'Proses');
+const canCancel = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
 
-const offlineQueue = computed(() => offlineStore.queue);
-const syncing = computed(() => offlineStore.syncing);
-
-// Role action checkers
-const canShipOrder = computed(() => {
-  return user.value?.role === 'admin' && selectedOrder.value?.status === 'Proses';
-});
-const canCancelOrder = computed(() => {
-  return user.value?.role === 'admin' && 
-    (selectedOrder.value?.status === 'Proses' || selectedOrder.value?.status === 'Dikirim') &&
-    !selectedOrder.value?.invoice_id;
-});
-const canPayOrder = computed(() => {
-  return ['admin', 'sales'].includes(user.value?.role) && 
-    (selectedOrder.value?.status === 'Proses' || selectedOrder.value?.status === 'Dikirim');
-});
-const canEditOrder = computed(() => {
-  return ['admin', 'sales'].includes(user.value?.role) && selectedOrder.value?.status !== 'Dibatalkan';
-});
-
-// Edit Order Modal States
-const showEditModal = ref(false);
-const editLoading = ref(false);
-const editForm = ref({
-  customer_name: '',
-  customer_phone: '',
-  note: ''
-});
-
-function openEditOrderModal() {
-  if (!selectedOrder.value) return;
-  editForm.value = {
-    customer_name: selectedOrder.value.customer?.name || selectedOrder.value.customer_name || '',
-    customer_phone: selectedOrder.value.customer_phone || selectedOrder.value.customer?.phone || '',
-    note: selectedOrder.value.note || ''
-  };
-  showEditModal.value = true;
+function badgeClass(s) {
+  return { Proses: 'badge-proses', Dikirim: 'badge-dikirim', Dibatalkan: 'badge-batal' }[s] || '';
 }
 
-async function submitEditOrder() {
-  if (!editForm.value.customer_phone) {
-    appStore.showToast('Nomor HP/WhatsApp tujuan wajib diisi', 'warning');
-    return;
-  }
-  editLoading.value = true;
-  try {
-    await apiFetch(`/api/orders/${selectedOrder.value.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        customer_name: editForm.value.customer_name,
-        customer_phone: editForm.value.customer_phone,
-        note: editForm.value.note
-      })
-    });
-
-    appStore.showToast('Data order & nomor tujuan berhasil diperbarui!', 'success');
-    showEditModal.value = false;
-    
-    // Refresh detail order
-    const refreshRes = await apiFetch(`/api/orders/${selectedOrder.value.id}`);
-    selectedOrder.value = {
-      ...refreshRes.data,
-      total_amount: selectedOrder.value.total_amount
-    };
-    fetchOrders();
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
-  } finally {
-    editLoading.value = false;
-  }
-}
-
-async function fetchOrders() {
+async function load() {
   loading.value = true;
   try {
-    const params = new URLSearchParams();
-    if (currentTab.value !== 'Semua') params.append('status', currentTab.value);
-    if (searchQuery.value) params.append('search', searchQuery.value);
-
-    const res = await apiFetch(`/api/orders?${params.toString()}`);
+    const res = await apiFetch('/api/orders?limit=50');
     orders.value = res.data || [];
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
+    pendingSummary.value = res.meta?.pending_summary || [];
+  } catch (e) {
+    appStore.showToast(`Gagal memuat: ${e.message}`, 'error');
   } finally {
     loading.value = false;
   }
 }
 
-// Debounce search
-let searchTimer = null;
-watch(searchQuery, () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(fetchOrders, 300);
-});
-
-watch(currentTab, fetchOrders);
-
-async function openDetail(order) {
-  try {
-    const res = await apiFetch(`/api/orders/${order.id}`);
-    selectedOrder.value = {
-      ...res.data,
-      total_amount: order.total_amount
-    };
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
-  }
-}
-
 async function handleShip() {
-  if (!confirm('Ubah status order ini menjadi Dikirim?')) return;
+  if (!confirm(`Kirim ${selected.value.total_qty} pcs ke ${selected.value.sales_name}?`)) return;
   actionLoading.value = true;
   try {
-    await apiFetch(`/api/orders/${selectedOrder.value.id}/ship`, { method: 'POST' });
-    appStore.showToast('Order berhasil ditandai Dikirim!', 'success');
-    selectedOrder.value = null;
-    fetchOrders();
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
+    await apiFetch(`/api/orders/${selected.value.id}/ship`, { method: 'POST' });
+    appStore.showToast('Barang dikirim. Stok sales bertambah.', 'success');
+    selected.value = null;
+    await load();
+  } catch (e) {
+    appStore.showToast(`Gagal kirim: ${e.message}`, 'error');
   } finally {
     actionLoading.value = false;
   }
 }
 
 async function handleCancel() {
-  const reason = prompt('Masukkan alasan pembatalan order:');
-  if (!reason) return;
+  if (!confirm('Batalkan permintaan ini?')) return;
   actionLoading.value = true;
   try {
-    await apiFetch(`/api/orders/${selectedOrder.value.id}/cancel`, {
-      method: 'POST',
-      body: JSON.stringify({ reason })
-    });
-    appStore.showToast('Order berhasil dibatalkan dan stok dikembalikan!', 'success');
-    selectedOrder.value = null;
-    fetchOrders();
-  } catch (err) {
-    appStore.showToast(err.message, 'error');
+    await apiFetch(`/api/orders/${selected.value.id}/cancel`, { method: 'POST' });
+    appStore.showToast('Permintaan dibatalkan', 'success');
+    selected.value = null;
+    await load();
+  } catch (e) {
+    appStore.showToast(`Gagal batal: ${e.message}`, 'error');
   } finally {
     actionLoading.value = false;
   }
 }
 
-function goToPayment() {
-  router.push(`/sales?order_id=${selectedOrder.value.id}`);
-}
-
-async function openOrderInvoicePreview() {
-  if (!selectedOrder.value) return;
-
-  // 1. Jika sudah ada invoice resmi (sudah bayar / tempo)
-  let invId = selectedOrder.value.invoice_id;
-  if (!invId && selectedOrder.value.status === 'Selesai') {
-    try {
-      const resInv = await apiFetch(`/api/invoices?search=${selectedOrder.value.order_no}`);
-      const found = (resInv.data || []).find(i => i.order_id === selectedOrder.value.id);
-      if (found) invId = found.id;
-    } catch (e) {
-      // Abaikan
-    }
-  }
-
-  if (invId) {
-    try {
-      const res = await apiFetch(`/api/invoices/${invId}`);
-      orderInvoiceModal.value = res.data;
-      return;
-    } catch (err) {
-      // Lanjut ke nota pesanan
-    }
-  }
-
-  // 2. Jika belum bayar: Buat format Nota Pesanan (Belum Bayar) lengkap
-  const ord = selectedOrder.value;
-  const items = (ord.items || []).map(it => ({
-    id: it.id,
-    name: it.name,
-    qty: it.qty,
-    price: it.price,
-    discount: it.discount || 0,
-    line_total: it.line_total || ((parseInt(it.qty, 10) * parseFloat(it.price)) - parseFloat(it.discount || 0))
-  }));
-  const totalQty = items.reduce((sum, it) => sum + parseInt(it.qty, 10), 0);
-  const subtotal = items.reduce((sum, it) => sum + it.line_total, 0);
-
-  orderInvoiceModal.value = {
-    id: ord.id,
-    doc_title: 'NOTA PESANAN',
-    badge_text: 'BELUM DIBAYAR',
-    invoice_no: ord.order_no,
-    invoice_date: ord.order_date,
-    invoice_time: ord.order_time,
-    customer_id: ord.customer_id,
-    customer_name: ord.customer?.name || ord.customer_name,
-    customer_address: ord.customer?.address || '-',
-    customer_phone: ord.customer_phone || ord.customer?.phone || '',
-    sales_name: ord.sales_name || '-',
-    items: items,
-    total_qty: totalQty,
-    subtotal: subtotal,
-    previous_balance: 0,
-    total_due: subtotal,
-    paid_amount: 0,
-    remaining: subtotal,
-    pay_method: 'Menunggu Pembayaran',
-    note: (ord.note ? `Catatan: ${ord.note} | ` : '') + '*** PERHATIAN: TAGIHAN / NOTA INI BELUM DIBAYAR ***',
-    config: {
-      business_name: 'RH FROZEN FOOD',
-      business_address: 'Distributor Frozen Food Terpercaya',
-      business_phone: '',
-      invoice_footer: 'Nota pesanan ini merupakan tanda pemesanan resmi (Belum Lunas).'
-    }
-  };
-}
-
-async function syncOfflineOrders() {
-  await offlineStore.syncQueue();
-  fetchOrders();
-}
-
-function getStatusBadgeClass(status) {
-  switch (status) {
-    case 'Proses': return 'badge-proses';
-    case 'Dikirim': return 'badge-dikirim';
-    case 'Selesai': return 'badge-selesai';
-    case 'Dibatalkan': return 'badge-dibatalkan';
-    default: return '';
-  }
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
-}
-
-onMounted(() => {
-  fetchOrders();
-  offlineStore.loadQueue();
-});
+onMounted(load);
 </script>
 
 <style scoped>
-.orders-page {
-  padding: 16px;
-  padding-bottom: 90px;
+.orders-page { display: flex; flex-direction: column; gap: 12px; padding-bottom: 90px; }
+.header-action { display: flex; gap: 10px; flex-wrap: wrap; }
+.search-wrap { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border, #ddd); border-radius: 10px; padding: 8px 12px; background: var(--card-bg, #fff); }
+.search-wrap input { border: none; outline: none; flex: 1; background: transparent; }
+.btn-add { display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 10px; background: linear-gradient(135deg, var(--primary, #2563eb), #4f46e5); color: #fff; font-weight: 600; text-decoration: none; }
+.status-tabs { display: flex; gap: 6px; overflow-x: auto; }
+.tab-btn { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border, #ddd); background: transparent; cursor: pointer; white-space: nowrap; }
+.tab-btn.active { background: var(--primary, #2563eb); color: #fff; border-color: transparent; }
+
+/* Pending summary card */
+.pending-summary-card {
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  border: 1.5px solid #bfdbfe;
+  padding: 14px;
 }
-.header-action {
+.summary-head {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
   gap: 10px;
-  margin-bottom: 14px;
 }
-.search-input-wrapper {
-  position: relative;
-  flex: 1;
+.summary-title-wrap {
   display: flex;
   align-items: center;
+  gap: 10px;
 }
-.search-icon {
-  position: absolute;
-  left: 12px;
-  color: var(--text-muted);
-  pointer-events: none;
+.summary-icon {
+  font-size: 24px;
 }
-.search-input {
-  width: 100%;
-  padding-left: 36px !important;
+.summary-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #1e3a8a;
 }
-.btn-add-order {
-  padding: 0 16px;
-  min-height: 44px;
-  background: var(--primary);
-  color: white;
-  border-radius: var(--radius-btn);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 13px;
+.summary-subtitle {
+  color: #64748b;
+  font-size: 12px;
+}
+.btn-toggle-summary {
+  background: #dbeafe;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
   font-weight: 600;
-  text-decoration: none;
+  cursor: pointer;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
-  transition: all 0.15s ease;
 }
-.btn-add-order:hover {
-  opacity: 0.95;
-  transform: translateY(-1px);
-}
-.status-tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 14px;
-  overflow-x: auto;
-}
-.tab-btn {
-  flex: 1;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-size: 13px;
-  min-height: 36px;
-  padding: 4px 8px;
-  border-radius: 8px;
-}
-.tab-btn.active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
-}
-
-/* Offline Queue */
-.offline-section {
-  margin-bottom: 16px;
-  background: #fff7ed;
-  padding: 12px;
-  border-radius: var(--radius-card);
-  border: 1px solid #fed7aa;
-}
-.offline-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: #c2410c;
-  margin-bottom: 8px;
-}
-.btn-sync {
-  background: #ea580c;
-  color: white;
-  font-size: 11px;
-  padding: 4px 8px;
-  min-height: 30px;
-}
-.offline-card {
-  margin-bottom: 6px;
-}
-.fail-reason {
-  font-size: 11px;
-  color: var(--danger);
-  margin-top: 4px;
-}
-
-.order-list {
+.summary-body {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #bfdbfe;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.pagination-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 12px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-card, 10px);
-}
-.page-info {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-.page-buttons {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.btn-page {
-  background: var(--bg-hover, #f1f5f9);
-  border: 1px solid var(--border-color, #cbd5e1);
-  color: var(--text-main);
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.btn-page:hover:not(:disabled) {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-}
-.btn-page:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.page-num {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-main);
-}
-.shortage-badge {
-  margin: 4px 0 6px;
-  padding: 4px 8px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #b45309;
-  background: rgba(245, 158, 11, 0.14);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-radius: 6px;
-  display: inline-block;
-}
-.item-shortage {
-  color: #d97706;
-  font-weight: 600;
-  font-size: 11.5px;
-}
-.order-card {
-  cursor: pointer;
-  margin-bottom: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.order-top, .order-bottom {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.order-no {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--primary);
-}
-.order-cust {
-  font-size: 15px;
-  font-weight: 600;
-}
-.order-date {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.order-total {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-main);
-}
-
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
-  color: var(--text-muted);
-}
-.empty-icon {
-  font-size: 40px;
-  margin-bottom: 8px;
-}
-
-/* Floating Action Button */
-.fab {
-  position: fixed;
-  bottom: calc(var(--safe-bottom) + 65px);
-  right: calc(50% - 220px);
-  width: 52px;
-  height: 52px;
-  background: var(--primary);
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  text-decoration: none;
-  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.35);
-  z-index: 40;
-}
-@media (max-width: 480px) {
-  .fab {
-    right: 20px;
-  }
-}
-
-/* Bottom Sheet styles are handled globally in styles.css */
-.detail-sec {
-  margin-bottom: 16px;
-}
-.sheet-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.sheet-title h3 {
-  font-size: 16px;
-}
-.sheet-close {
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 18px;
-  min-height: 36px;
-  padding: 4px;
-}
-.sheet-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-}
-.items-title {
-  font-size: 13px;
-  font-weight: 700;
-  margin-top: 6px;
-}
-.items-table {
-  background: var(--bg-app);
+.summary-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding: 10px 12px;
+  transition: border-color .2s;
 }
-.item-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  border-bottom: 1px dashed var(--border-color);
-  padding-bottom: 6px;
+.shortage-item {
+  border-color: #fca5a5;
+  background: #fff7f7;
 }
-.item-row:last-child {
-  border-bottom: none;
+.pending-summary-card.has-shortage {
+  border-color: #fca5a5;
+  background: linear-gradient(135deg, #fff7f7 0%, #fef2f2 100%);
 }
-.item-info {
-  display: flex;
-  flex-direction: column;
-}
-.item-name {
-  font-weight: 600;
-}
-.item-calc {
+.shortage-alert-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  border-radius: 999px;
+  padding: 3px 10px;
   font-size: 11px;
-  color: var(--text-muted);
-}
-.item-disc {
-  font-size: 10px;
-  color: var(--danger);
-}
-.item-total {
   font-weight: 700;
+  white-space: nowrap;
 }
-.order-summary-row {
+.sum-prod-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   font-size: 14px;
-  font-weight: 600;
+  gap: 8px;
 }
-.total-big {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--primary);
-}
-.action-buttons {
+.sum-name-col {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-.btn-action {
-  width: 100%;
-  color: white;
-  min-height: 44px;
-}
-.btn-edit-order {
-  background: #3b82f6;
-}
-.btn-print-order {
-  background: #0ea5e9;
-}
-.btn-ship { background: var(--success); }
-.btn-cancel { background: var(--danger); }
-.btn-pay { background: var(--primary); }
-
-.phone-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.btn-edit-phone-inline {
-  display: inline-flex;
-  align-items: center;
   gap: 3px;
-  background: #f1f5f9;
-  border: 1px solid var(--border-color);
-  color: var(--primary);
-  padding: 2px 7px;
-  border-radius: 6px;
+}
+.sum-qty-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.sum-prod-total {
+  color: #2563eb;
+  font-size: 13px;
+}
+.sum-admin-stock {
   font-size: 11px;
   font-weight: 600;
-  cursor: pointer;
 }
-.wa-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.stock-ok { color: #059669; }
+.stock-low { color: #b91c1c; }
+.stock-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.stock-badge--low {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.stock-badge--ok {
   background: #dcfce7;
   color: #15803d;
-  padding: 2px 8px;
-  border-radius: 9999px;
+}
+.sum-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.breakdown-chip {
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 3px 8px;
   font-size: 11px;
-  font-weight: 600;
-  text-decoration: none;
+  color: #475569;
 }
-.hint {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-.btn-save-order {
-  background: var(--primary);
-  color: white;
-  min-height: 44px;
-  width: 100%;
-  font-size: 14px;
-  margin-top: 10px;
-}
+
+.empty { text-align: center; padding: 40px 16px; color: var(--text-muted, #888); }
+.order-list { display: flex; flex-direction: column; gap: 10px; }
+.order-card { padding: 14px; cursor: pointer; transition: transform .15s; }
+.order-card:hover { transform: translateY(-2px); }
+.order-top, .order-bottom { display: flex; justify-content: space-between; align-items: center; }
+.order-no { font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.order-sales { margin: 6px 0; font-size: 14px; }
+.order-bottom { font-size: 13px; color: var(--text-muted, #888); }
+.shortage, .text-danger { color: var(--danger, #ef4444); font-size: 12px; }
+.badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge-proses { background: rgba(245, 158, 11, .15); color: #d97706; }
+.badge-dikirim { background: rgba(16, 185, 129, .15); color: #059669; }
+.badge-batal { background: rgba(239, 68, 68, .15); color: #dc2626; }
+.sheet-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: flex; align-items: flex-end; justify-content: center; z-index: 1000; }
+.sheet-content { background: var(--card-bg, #fff); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 18px; }
+.sheet-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.sheet-header h3 { margin: 0 0 4px; }
+.sheet-close { background: none; border: none; cursor: pointer; }
+.info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+.info-row.total { border-top: 1px solid var(--border, #eee); margin-top: 8px; padding-top: 10px; }
+.items-title { margin: 14px 0 6px; }
+.item-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border, #eee); }
+.item-name { font-weight: 600; }
+.action-buttons { display: flex; gap: 8px; margin-top: 16px; }
+.btn-action { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; color: #fff; }
+.btn-action:disabled { opacity: .5; }
+.btn-ship { background: linear-gradient(135deg, #10b981, #059669); }
+.btn-cancel { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.hint { font-size: 12px; color: var(--text-muted, #888); margin-top: 8px; text-align: center; }
 </style>

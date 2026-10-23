@@ -15,6 +15,7 @@ import Reports from './views/Reports.vue';
 import History from './views/History.vue';
 import More from './views/More.vue';
 import ReturnNew from './views/ReturnNew.vue';
+import Returns from './views/Returns.vue';
 import Purchases from './views/Purchases.vue';
 import StockOpname from './views/StockOpname.vue';
 import Targets from './views/Targets.vue';
@@ -59,6 +60,12 @@ const routes = [
     path: '/sales',
     name: 'Sales',
     component: Sales
+  },
+  {
+    path: '/returns',
+    name: 'Returns',
+    component: Returns,
+    meta: { showBack: true }
   },
   {
     path: '/returns/new',

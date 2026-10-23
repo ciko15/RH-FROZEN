@@ -27,6 +27,19 @@
         <span class="m-arrow">›</span>
       </router-link>
 
+      <router-link to="/returns" class="menu-item card">
+        <div class="m-left">
+          <div class="m-icon-box icon-stock">
+            <Icon name="package" size="20" />
+          </div>
+          <div class="m-text">
+            <span class="m-title">Retur Barang</span>
+            <span class="m-sub">Pengajuan & persetujuan retur ke admin</span>
+          </div>
+        </div>
+        <span class="m-arrow">›</span>
+      </router-link>
+
       <router-link to="/receivables" class="menu-item card">
         <div class="m-left">
           <div class="m-icon-box icon-receivables">

@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
   try {
     const authUser = await authenticate(req);
-    requireRole(authUser, ['admin', 'manajer']);
+    requireRole(authUser, ['admin', 'manajer', 'sales']);
 
     const orderId = req.query.id;
     if (!orderId) {

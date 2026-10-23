@@ -37,6 +37,24 @@
       -->
     </div>
 
+    <!-- Tab Pilihan: Stok Saya vs Stok Admin (Khusus Sales) -->
+    <div v-if="isSales" class="stock-source-tabs">
+      <button
+        class="tab-btn-source"
+        :class="{ active: stockSource === 'mine' }"
+        @click="switchSource('mine')"
+      >
+        🎒 Stok Saya (Tersedia: {{ myStockCount }})
+      </button>
+      <button
+        class="tab-btn-source"
+        :class="{ active: stockSource === 'admin' }"
+        @click="switchSource('admin')"
+      >
+        🏢 Stok Admin / Pusat
+      </button>
+    </div>
+
     <!-- Filter Kategori -->
     <div class="category-tabs">
       <button
@@ -362,7 +380,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
@@ -371,9 +389,26 @@ import Icon from '../components/Icon.vue';
 const authStore = useAuthStore();
 const appStore = useAppStore();
 const user = computed(() => authStore.user);
+const isSales = computed(() => user.value?.role === 'sales');
+const stockSource = ref('mine'); // 'mine' | 'admin'
+const mySalesStock = ref([]);
+const myStockCount = computed(() => mySalesStock.value.filter(s => s.stock > 0).length);
 
-const canManageStock = computed(() => user.value?.role === 'admin');
+const canManageStock = computed(() => user.value?.role === 'admin' && stockSource.value !== 'mine');
 const canViewCost = computed(() => user.value?.role === 'admin');
+
+function switchSource(src) {
+  stockSource.value = src;
+  stockCurrentPage.value = 1;
+  fetchProducts();
+}
+
+// Watch perubahan user jika halaman di-refresh saat auth baru selesai dimuat
+watch(() => authStore.user, (newVal) => {
+  if (newVal) {
+    fetchProducts();
+  }
+});
 
 const loading = ref(false);
 const products = ref([]);
@@ -565,8 +600,29 @@ async function submitEditProduct() {
 async function fetchProducts() {
   loading.value = true;
   try {
-    const res = await apiFetch('/api/products');
-    products.value = res.data || [];
+    if (isSales.value && stockSource.value === 'mine') {
+      const res = await apiFetch('/api/products/sales-stock');
+      mySalesStock.value = res.data || [];
+      // Format sama dengan products agar komponen menampilkan nama, emoji, dll
+      products.value = mySalesStock.value.map(s => ({
+        id: s.product_id,
+        name: s.product_name,
+        category: s.category || 'Lainnya',
+        price: s.price,
+        stock: s.stock,
+        emoji: s.emoji || '📦',
+        image: s.image || '',
+        active: true,
+        is_low_stock: s.stock <= 5
+      }));
+    } else {
+      const res = await apiFetch('/api/products');
+      products.value = res.data || [];
+      // Jika sales membuka stok admin, preload juga stok sendiri untuk count badge
+      if (isSales.value) {
+        apiFetch('/api/products/sales-stock').then(r => { mySalesStock.value = r.data || []; }).catch(() => {});
+      }
+    }
   } catch (err) {
     appStore.showToast(err.message, 'error');
   } finally {
@@ -684,6 +740,29 @@ onMounted(() => {
 .stock-page {
   padding: 16px;
   padding-bottom: 90px;
+}
+.stock-source-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.tab-btn-source {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-color, #e5e5e5);
+  background: var(--bg-card, #fff);
+  color: var(--text-color, #333);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.tab-btn-source.active {
+  background: var(--primary, #2563eb);
+  color: #fff;
+  border-color: var(--primary, #2563eb);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, .25);
 }
 .stock-header {
   display: flex;
