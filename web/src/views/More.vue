@@ -107,18 +107,6 @@
         <span class="m-arrow">›</span>
       </router-link>
 
-      <router-link to="/audit" class="menu-item card" v-if="user?.role === 'admin'">
-        <div class="m-left">
-          <div class="m-icon-box icon-audit">
-            <Icon name="audit" size="20" />
-          </div>
-          <div class="m-text">
-            <span class="m-title">Log Aktivitas</span>
-            <span class="m-sub">Catatan audit log sistem</span>
-          </div>
-        </div>
-        <span class="m-arrow">›</span>
-      </router-link>
 
       <div class="menu-group-title">Pengaturan Akun & Aplikasi</div>
 

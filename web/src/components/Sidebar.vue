@@ -72,10 +72,6 @@
           <div class="icon-box"><Icon name="users" size="18" class="nav-svg" /></div>
           <span class="label">Manajemen User</span>
         </router-link>
-        <router-link to="/audit" class="sidebar-link" active-class="active" v-if="isAdmin">
-          <div class="icon-box"><Icon name="audit" size="18" class="nav-svg" /></div>
-          <span class="label">Audit Log</span>
-        </router-link>
       </nav>
     </div>
 
