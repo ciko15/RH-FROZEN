@@ -6,6 +6,32 @@ export default async function handler(req, res) {
   const pathname = parsedUrl.pathname;
   req.query = { ...parsedUrl.query, ...(req.query || {}) };
 
+  // Parse body jika belum diparsing oleh Vercel
+  if (!req.body && req.method !== 'GET' && req.method !== 'HEAD') {
+    try {
+      const buffers = [];
+      for await (const chunk of req) {
+        buffers.push(chunk);
+      }
+      const raw = Buffer.concat(buffers).toString();
+      if (raw) {
+        try {
+          req.body = JSON.parse(raw);
+        } catch (e) {
+          req.body = raw;
+        }
+      } else {
+        req.body = {};
+      }
+    } catch (e) {
+      req.body = {};
+    }
+  } else if (typeof req.body === 'string') {
+    try {
+      req.body = JSON.parse(req.body);
+    } catch (e) {}
+  }
+
   try {
     // 1. Auth routes
     if (pathname === '/api/auth/login') {

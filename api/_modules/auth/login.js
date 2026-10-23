@@ -74,7 +74,11 @@ export default async function handler(req, res) {
     user.failed_count = 0;
     user.locked_until = '';
     user.last_login_at = now.toISOString();
-    await updateRow('Users', user._rowIndex, user, USER_HEADERS);
+    try {
+      await updateRow('Users', user._rowIndex, user, USER_HEADERS);
+    } catch (e) {
+      console.warn('[LOGIN UPDATE LAST LOGIN WARNING]', e.message);
+    }
 
     const tokenVersion = parseInt(user.token_version, 10) || 1;
     const isMustChange = String(user.must_change_password).toUpperCase() === 'TRUE';
