@@ -94,7 +94,11 @@ export default async function handler(req, res) {
       if (customer && customer._rowIndex) {
         let changed = false;
         if (data.customer_phone !== undefined) {
-          customer.phone = data.customer_phone;
+          let p = data.customer_phone.trim();
+          if (p && !p.startsWith('0') && !p.startsWith('+')) {
+            p = '0' + p;
+          }
+          customer.phone = p;
           changed = true;
         }
         if (data.customer_name !== undefined && data.customer_name.trim()) {

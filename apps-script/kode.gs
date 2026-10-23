@@ -113,6 +113,10 @@ function sanitizeText(val) {
     if (val.startsWith('=') || val.startsWith('+') || val.startsWith('-') || val.startsWith('@')) {
       return "'" + val;
     }
+    // Cegah angka nol di depan (misal: nomor telepon 08xxx) diubah menjadi angka otomatis oleh Google Sheets
+    if (/^0\d+$/.test(val)) {
+      return "'" + val;
+    }
   }
   return val;
 }
@@ -486,7 +490,7 @@ function forceFillMasterData() {
   }
 
   // 2. ISI TAB CUSTOMERS
-  const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'balance', 'credit_limit', 'term_days', 'active'];
+  const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
   let sheetCust = ss.getSheetByName('Customers');
   if (!sheetCust) {
     sheetCust = ss.insertSheet('Customers');
@@ -855,7 +859,7 @@ function createInvoice(payload) {
 
     // Update Saldo Pelanggan
     customer.balance = remaining;
-    const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'balance', 'credit_limit', 'term_days', 'active'];
+    const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
     updateSheetRow('Customers', customer._rowIndex, customer, custHeaders);
 
     // Update Status Order Selesai
@@ -895,7 +899,7 @@ function receivePayment(payload) {
 
     const remaining = currentBalance - payAmount;
     customer.balance = remaining;
-    const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'balance', 'credit_limit', 'term_days', 'active'];
+    const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
     updateSheetRow('Customers', customer._rowIndex, customer, custHeaders);
 
     const now = new Date();
@@ -1032,7 +1036,7 @@ function createReturn(payload) {
         cashRefund = totalReturnValue - curBalance;
         customer.balance = 0;
       }
-      const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'balance', 'credit_limit', 'term_days', 'active'];
+      const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
       updateSheetRow('Customers', customer._rowIndex, customer, custHeaders);
     }
 

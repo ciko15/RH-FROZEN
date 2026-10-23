@@ -27,7 +27,12 @@ function desanitizeText(val) {
 
 function sanitizeText(val) {
   if (typeof val === 'string') {
+    // Keamanan injection formula sheet
     if (val.startsWith('=') || val.startsWith('+') || val.startsWith('-') || val.startsWith('@')) {
+      return "'" + val;
+    }
+    // Cegah angka nol di depan (misal: nomor telepon 08xxx) diubah menjadi angka otomatis oleh Google Sheets
+    if (/^0\d+$/.test(val)) {
       return "'" + val;
     }
   }

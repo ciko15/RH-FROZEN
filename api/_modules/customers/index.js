@@ -94,11 +94,17 @@ export default async function handler(req, res) {
       const salesId = authUser.role === 'sales' ? authUser.id : (data.sales_id || authUser.id);
       const newId = crypto.randomUUID();
 
+      // Pastikan format nomor hp berawalan '0' bila diketik tanpa '0' (misal: 812xxx)
+      let phone = (data.phone || '').trim();
+      if (phone && !phone.startsWith('0') && !phone.startsWith('+')) {
+        phone = '0' + phone;
+      }
+
       const newCust = {
         id: newId,
         name: data.name,
         address: data.address,
-        phone: data.phone,
+        phone: phone,
         branch_id: branchId,
         sales_id: salesId,
         balance: 0,
@@ -146,12 +152,17 @@ export default async function handler(req, res) {
         }
       }
 
+      let phone = data.phone !== undefined ? data.phone.trim() : (cust.phone || '');
+      if (phone && !phone.startsWith('0') && !phone.startsWith('+')) {
+        phone = '0' + phone;
+      }
+
       // Pastikan branch_id dan sales_id tidak sembarangan diubah oleh sales biasa
       const updatedCust = {
         ...cust,
         name: data.name !== undefined ? data.name : cust.name,
         address: data.address !== undefined ? data.address : (cust.address || ''),
-        phone: data.phone !== undefined ? data.phone : (cust.phone || ''),
+        phone: phone,
         branch_id: (authUser.role === 'admin' && data.branch_id) ? data.branch_id : cust.branch_id,
         sales_id: (authUser.role === 'admin' || authUser.role === 'manajer') && data.sales_id !== undefined ? data.sales_id : (cust.sales_id || (authUser.role === 'sales' ? authUser.id : '')),
         credit_limit: (authUser.role === 'admin' || authUser.role === 'manajer') && data.credit_limit !== undefined ? data.credit_limit : cust.credit_limit,
