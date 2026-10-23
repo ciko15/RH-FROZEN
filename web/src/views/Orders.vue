@@ -69,23 +69,49 @@
       <p>Tidak ada order pada status ini.</p>
     </div>
 
-    <div v-else class="order-list">
-      <div
-        v-for="order in orders"
-        :key="order.id"
-        class="card order-card"
-        @click="openDetail(order)"
-      >
-        <div class="order-top">
-          <span class="order-no"><Icon name="package" size="14" /> {{ order.order_no }}</span>
-          <span class="badge" :class="getStatusBadgeClass(order.status)">
-            {{ order.status }}
-          </span>
+    <div v-else class="order-list-wrapper">
+      <div class="order-list">
+        <div
+          v-for="order in paginatedOrders"
+          :key="order.id"
+          class="card order-card"
+          @click="openDetail(order)"
+        >
+          <div class="order-top">
+            <span class="order-no"><Icon name="package" size="14" /> {{ order.order_no }}</span>
+            <span class="badge" :class="getStatusBadgeClass(order.status)">
+              {{ order.status }}
+            </span>
+          </div>
+          <div class="order-cust">{{ order.customer_name }}</div>
+          <div class="order-bottom">
+            <span class="order-date">{{ order.order_date }} {{ order.order_time }}</span>
+            <span class="order-total">Rp {{ formatNumber(order.total_amount) }}</span>
+          </div>
         </div>
-        <div class="order-cust">{{ order.customer_name }}</div>
-        <div class="order-bottom">
-          <span class="order-date">{{ order.order_date }} {{ order.order_time }}</span>
-          <span class="order-total">Rp {{ formatNumber(order.total_amount) }}</span>
+      </div>
+
+      <!-- Pagination Orders -->
+      <div v-if="orderTotalPages > 1" class="pagination-bar">
+        <span class="page-info">
+          Menampilkan {{ (orderCurrentPage - 1) * orderPageSize + 1 }} - {{ Math.min(orderCurrentPage * orderPageSize, orders.length) }} dari {{ orders.length }} pesanan
+        </span>
+        <div class="page-buttons">
+          <button
+            class="btn-page"
+            :disabled="orderCurrentPage === 1"
+            @click="orderCurrentPage--"
+          >
+            &laquo; Sebelumnya
+          </button>
+          <span class="page-num">Hal {{ orderCurrentPage }} / {{ orderTotalPages }}</span>
+          <button
+            class="btn-page"
+            :disabled="orderCurrentPage === orderTotalPages"
+            @click="orderCurrentPage++"
+          >
+            Berikutnya &raquo;
+          </button>
         </div>
       </div>
     </div>
@@ -306,6 +332,19 @@ const loading = ref(false);
 const actionLoading = ref(false);
 const orders = ref([]);
 const selectedOrder = ref(null);
+
+// Pagination Orders (10 per halaman)
+const orderCurrentPage = ref(1);
+const orderPageSize = ref(10);
+
+const orderTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(orders.value.length / orderPageSize.value));
+});
+
+const paginatedOrders = computed(() => {
+  const start = (orderCurrentPage.value - 1) * orderPageSize.value;
+  return orders.value.slice(start, start + orderPageSize.value);
+});
 
 const offlineQueue = computed(() => offlineStore.queue);
 const syncing = computed(() => offlineStore.syncing);
@@ -649,11 +688,56 @@ onMounted(() => {
   margin-top: 4px;
 }
 
-/* Orders List */
 .order-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 10px);
+}
+.page-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-page {
+  background: var(--bg-hover, #f1f5f9);
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-page:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn-page:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.page-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 .order-card {
   cursor: pointer;

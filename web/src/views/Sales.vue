@@ -63,23 +63,49 @@
         <div class="empty-icon-box"><Icon name="file-text" size="38" /></div>
         <h3>Belum Ada Penjualan Selesai</h3>
       </div>
-      <div v-else class="invoices-grid">
-        <div
-          v-for="inv in completedInvoices"
-          :key="inv.id"
-          class="card invoice-card"
-          @click="openInvoiceDetail(inv)"
-        >
-          <div class="card-head">
-            <span class="inv-no"><Icon name="file-text" size="14" /> {{ inv.invoice_no }}</span>
-            <span class="badge" :class="parseFloat(inv.remaining) <= 0 ? 'badge-dikirim' : 'badge-dibatalkan'">
-              {{ parseFloat(inv.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + formatNumber(inv.remaining) }}
-            </span>
+      <div v-else>
+        <div class="invoices-grid">
+          <div
+            v-for="inv in paginatedCompletedInvoices"
+            :key="inv.id"
+            class="card invoice-card"
+            @click="openInvoiceDetail(inv)"
+          >
+            <div class="card-head">
+              <span class="inv-no"><Icon name="file-text" size="14" /> {{ inv.invoice_no }}</span>
+              <span class="badge" :class="parseFloat(inv.remaining) <= 0 ? 'badge-dikirim' : 'badge-dibatalkan'">
+                {{ parseFloat(inv.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + formatNumber(inv.remaining) }}
+              </span>
+            </div>
+            <div class="cust-name">{{ inv.customer_name }}</div>
+            <div class="card-foot">
+              <span class="date">{{ inv.invoice_date }}</span>
+              <span class="amount">Total: Rp {{ formatNumber(inv.total_due) }}</span>
+            </div>
           </div>
-          <div class="cust-name">{{ inv.customer_name }}</div>
-          <div class="card-foot">
-            <span class="date">{{ inv.invoice_date }}</span>
-            <span class="amount">Total: Rp {{ formatNumber(inv.total_due) }}</span>
+        </div>
+
+        <!-- Pagination Selesai -->
+        <div v-if="invTotalPages > 1" class="pagination-bar">
+          <span class="page-info">
+            Menampilkan {{ (invCurrentPage - 1) * invPageSize + 1 }} - {{ Math.min(invCurrentPage * invPageSize, completedInvoices.length) }} dari {{ completedInvoices.length }} invoice
+          </span>
+          <div class="page-buttons">
+            <button
+              class="btn-page"
+              :disabled="invCurrentPage === 1"
+              @click="invCurrentPage--"
+            >
+              &laquo; Sebelumnya
+            </button>
+            <span class="page-num">Hal {{ invCurrentPage }} / {{ invTotalPages }}</span>
+            <button
+              class="btn-page"
+              :disabled="invCurrentPage === invTotalPages"
+              @click="invCurrentPage++"
+            >
+              Berikutnya &raquo;
+            </button>
           </div>
         </div>
       </div>
@@ -203,6 +229,19 @@ const loadingWaiting = ref(false);
 const loadingCompleted = ref(false);
 const waitingOrders = ref([]);
 const completedInvoices = ref([]);
+
+// Pagination Invoices (10 per halaman)
+const invCurrentPage = ref(1);
+const invPageSize = ref(10);
+
+const invTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(completedInvoices.value.length / invPageSize.value));
+});
+
+const paginatedCompletedInvoices = computed(() => {
+  const start = (invCurrentPage.value - 1) * invPageSize.value;
+  return completedInvoices.value.slice(start, start + invPageSize.value);
+});
 
 // State Pembayaran
 const payModalOrder = ref(null);
@@ -402,6 +441,52 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 10px);
+}
+.page-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-page {
+  background: var(--bg-hover, #f1f5f9);
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-page:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn-page:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.page-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 .waiting-card, .invoice-card {
   cursor: pointer;

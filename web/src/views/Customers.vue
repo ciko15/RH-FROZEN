@@ -24,43 +24,69 @@
     </div>
 
     <div v-if="loading" class="state-msg">Memuat pelanggan...</div>
-    <div v-else-if="customers.length === 0" class="empty-state">
+    <div v-else-if="filteredCustomers.length === 0" class="empty-state">
       <div class="empty-icon-box"><Icon name="customers" size="38" /></div>
       <h3>Belum Ada Pelanggan</h3>
       <p>{{ user?.role === 'sales' ? 'Anda belum memiliki pelanggan yang terdaftar.' : 'Belum ada data pelanggan di cabang ini.' }}</p>
     </div>
-    <div v-else class="cust-list">
-      <div
-        v-for="c in customers"
-        :key="c.id"
-        class="card cust-card"
-      >
-        <div class="cust-head">
-          <span class="cust-name">{{ c.name }}</span>
-          <span class="badge" :class="c.active ? 'badge-dikirim' : 'badge-dibatalkan'">
-            {{ c.active ? 'Aktif' : 'Nonaktif' }}
-          </span>
-        </div>
+    <div v-else>
+      <div class="cust-list">
+        <div
+          v-for="c in paginatedCustomers"
+          :key="c.id"
+          class="card cust-card"
+        >
+          <div class="cust-head">
+            <span class="cust-name">{{ c.name }}</span>
+            <span class="badge" :class="c.active ? 'badge-dikirim' : 'badge-dibatalkan'">
+              {{ c.active ? 'Aktif' : 'Nonaktif' }}
+            </span>
+          </div>
 
-        <div class="cust-info">
-          <span v-if="c.sales_name"><Icon name="user" size="13" /> Sales: <strong>{{ c.sales_name }}</strong></span>
-          <span><Icon name="map-pin" size="13" /> {{ c.address || 'Alamat belum diatur' }}</span>
-          <span><Icon name="phone" size="13" /> {{ c.phone || '-' }}</span>
-          <div class="credit-info">
-            <span>Batas Kredit: <strong>{{ c.credit_limit > 0 ? 'Rp ' + formatNumber(c.credit_limit) : 'Tanpa Batas' }}</strong></span>
-            <span>Jatuh Tempo: <strong>{{ c.term_days }} Hari</strong></span>
+          <div class="cust-info">
+            <span v-if="c.sales_name"><Icon name="user" size="13" /> Sales: <strong>{{ c.sales_name }}</strong></span>
+            <span><Icon name="map-pin" size="13" /> {{ c.address || 'Alamat belum diatur' }}</span>
+            <span><Icon name="phone" size="13" /> {{ c.phone || '-' }}</span>
+            <div class="credit-info">
+              <span>Batas Kredit: <strong>{{ c.credit_limit > 0 ? 'Rp ' + formatNumber(c.credit_limit) : 'Tanpa Batas' }}</strong></span>
+              <span>Tempo: <strong>{{ c.term_days }} Hari</strong></span>
+            </div>
+          </div>
+
+          <div class="cust-actions">
+            <button class="btn-edit-cust" @click="openEditModal(c)" title="Edit data pelanggan">
+              <Icon name="edit" size="13" /> Edit
+            </button>
+            <button class="btn-price" @click="openPricesModal(c)" title="Atur harga khusus">
+              <Icon name="tag" size="13" /> Harga
+            </button>
+            <button class="btn-delete-cust" @click="confirmDeleteCustomer(c)" title="Hapus pelanggan">
+              <Icon name="trash" size="13" /> Hapus
+            </button>
           </div>
         </div>
+      </div>
 
-        <div class="cust-actions">
-          <button class="btn-edit-cust" @click="openEditModal(c)" title="Edit data pelanggan">
-            <Icon name="edit" size="13" /> Edit
+      <!-- Pagination Footer -->
+      <div v-if="totalPages > 1" class="pagination-bar">
+        <span class="page-info">
+          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredCustomers.length) }} dari {{ filteredCustomers.length }} data
+        </span>
+        <div class="page-buttons">
+          <button
+            class="btn-page"
+            :disabled="currentPage === 1"
+            @click="currentPage--"
+          >
+            &laquo; Sebelumnya
           </button>
-          <button class="btn-price" @click="openPricesModal(c)" title="Atur harga khusus">
-            <Icon name="tag" size="13" /> Harga Khusus
-          </button>
-          <button class="btn-delete-cust" @click="confirmDeleteCustomer(c)" title="Hapus pelanggan">
-            <Icon name="trash" size="13" /> Hapus
+          <span class="page-num">Hal {{ currentPage }} / {{ totalPages }}</span>
+          <button
+            class="btn-page"
+            :disabled="currentPage === totalPages"
+            @click="currentPage++"
+          >
+            Berikutnya &raquo;
           </button>
         </div>
       </div>
@@ -264,6 +290,32 @@ const customers = ref([]);
 const branches = ref([]);
 const salesList = ref([]);
 const searchQuery = ref('');
+
+// Pagination (10 data per halaman)
+const currentPage = ref(1);
+const pageSize = ref(10);
+
+const filteredCustomers = computed(() => {
+  let list = customers.value;
+  const q = searchQuery.value.toLowerCase().trim();
+  if (q) {
+    list = list.filter(c => 
+      (c.name && c.name.toLowerCase().includes(q)) ||
+      (c.phone && c.phone.includes(q)) ||
+      (c.address && c.address.toLowerCase().includes(q))
+    );
+  }
+  return list;
+});
+
+const totalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredCustomers.value.length / pageSize.value));
+});
+
+const paginatedCustomers = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredCustomers.value.slice(start, start + pageSize.value);
+});
 
 // Modal Tambah Pelanggan
 const showAddModal = ref(false);
@@ -564,14 +616,73 @@ onMounted(() => {
   font-size: 13px;
 }
 .cust-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
 }
 .cust-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 12px);
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.cust-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: #cbd5e1;
+}
+
+/* Pagination Bar */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 10px);
+}
+.page-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-page {
+  background: var(--bg-hover, #f1f5f9);
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-page:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn-page:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.page-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 .cust-head {
   display: flex;
