@@ -17,10 +17,26 @@ export default async function handler(req, res) {
       throw new ApiError(400, 'BAD_REQUEST', 'ID Order wajib disertakan');
     }
 
-    const updated = await callGas('setShipped', {
-      order_id: orderId,
-      user_id: authUser.id
-    });
+    let updated;
+    try {
+      updated = await callGas('setShipped', {
+        order_id: orderId,
+        user_id: authUser.id
+      });
+    } catch (gasErr) {
+      console.warn('[GAS SHIP FALLBACK] Memproses pengiriman via Sheets langsung:', gasErr.message);
+      // Fallback langsung ke Google Sheets
+      const { getTabRows, updateRow } = await import('../../../_lib/sheets.js');
+      const orders = await getTabRows('Orders');
+      const order = orders.find(o => o.id === orderId);
+      if (!order) {
+        throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan');
+      }
+      order.status = 'Dikirim';
+      const headers = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'];
+      await updateRow('Orders', order._rowIndex, order, headers);
+      updated = order;
+    }
 
     return res.status(200).json({
       ok: true,

@@ -1,7 +1,7 @@
 const cacheStore = new Map();
 
 /**
- * Menyimpan data tab dengan TTL 10 detik
+ * Menyimpan data tab dengan TTL 120 detik (2 menit) untuk respon secepat kilat
  */
 export function getCached(key) {
   const item = cacheStore.get(key);
@@ -13,7 +13,7 @@ export function getCached(key) {
   return item.value;
 }
 
-export function setCached(key, value, ttlSeconds = 10) {
+export function setCached(key, value, ttlSeconds = 120) {
   cacheStore.set(key, {
     value,
     expiresAt: Date.now() + (ttlSeconds * 1000)

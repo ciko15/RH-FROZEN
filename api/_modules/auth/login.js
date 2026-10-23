@@ -80,16 +80,6 @@ export default async function handler(req, res) {
       throw new ApiError(401, 'INVALID_CREDENTIALS', 'Username atau password salah');
     }
 
-    // Sukses: Reset failed_count & locked_until, perbarui last_login_at
-    user.failed_count = 0;
-    user.locked_until = '';
-    user.last_login_at = now.toISOString();
-    try {
-      await updateRow('Users', user._rowIndex, user, USER_HEADERS);
-    } catch (e) {
-      console.warn('[LOGIN UPDATE LAST LOGIN WARNING]', e.message);
-    }
-
     const tokenVersion = parseInt(user.token_version, 10) || 1;
     const isMustChange = String(user.must_change_password).toUpperCase() === 'TRUE';
 
@@ -102,7 +92,10 @@ export default async function handler(req, res) {
     });
 
     setAuthCookie(res, token);
-    await logAudit(user.id, 'LOGIN', { username: user.username });
+
+    // Di balik layar (background): Update last_login_at & catat AuditLog tanpa memperlambat login pengguna
+    updateRow('Users', user._rowIndex, user, USER_HEADERS).catch(e => console.warn('[LOGIN UPDATE LAST LOGIN WARNING]', e.message));
+    logAudit(user.id, 'LOGIN', { username: user.username }).catch(e => console.warn('[LOGIN AUDIT WARNING]', e.message));
 
     return res.status(200).json({
       ok: true,
