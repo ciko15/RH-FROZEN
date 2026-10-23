@@ -390,6 +390,31 @@ const categories = computed(() => {
 
 const selectedCategory = ref('Semua');
 
+// Filter & Pagination Stok Barang (10 per halaman)
+const stockCurrentPage = ref(1);
+const stockPageSize = ref(10);
+
+const filteredProducts = computed(() => {
+  let list = products.value;
+  if (selectedCategory.value !== 'Semua') {
+    list = list.filter(p => p.category === selectedCategory.value);
+  }
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase().trim();
+    list = list.filter(p => p.name.toLowerCase().includes(q));
+  }
+  return list;
+});
+
+const stockTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredProducts.value.length / stockPageSize.value));
+});
+
+const paginatedProducts = computed(() => {
+  const start = (stockCurrentPage.value - 1) * stockPageSize.value;
+  return filteredProducts.value.slice(start, start + stockPageSize.value);
+});
+
 // State Koreksi Stok
 const adjustProduct = ref(null);
 const adjustReason = ref('Koreksi');
@@ -510,31 +535,6 @@ async function submitEditProduct() {
     editLoading.value = false;
   }
 }
-
-const filteredProducts = computed(() => {
-  let list = products.value;
-  if (selectedCategory.value !== 'Semua') {
-    list = list.filter(p => p.category === selectedCategory.value);
-  }
-  if (searchQuery.value) {
-    const q = searchQuery.value.toLowerCase();
-    list = list.filter(p => p.name.toLowerCase().includes(q));
-  }
-  return list;
-});
-
-// Pagination Stok Barang (10 per halaman)
-const stockCurrentPage = ref(1);
-const stockPageSize = ref(10);
-
-const stockTotalPages = computed(() => {
-  return Math.max(1, Math.ceil(filteredProducts.value.length / stockPageSize.value));
-});
-
-const paginatedProducts = computed(() => {
-  const start = (stockCurrentPage.value - 1) * stockPageSize.value;
-  return filteredProducts.value.slice(start, start + stockPageSize.value);
-});
 
 async function fetchProducts() {
   loading.value = true;
