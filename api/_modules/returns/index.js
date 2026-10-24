@@ -76,10 +76,41 @@ export default async function handler(req, res) {
         branch_id: authUser.branch_id || ''
       });
 
+      // Ambil rincian produk untuk melengkapi payload nota retur
+      const tabs = await getTabsBatch(['Products', 'Invoices']);
+      const products = tabs.Products || [];
+      const invoice = (tabs.Invoices || []).find(inv => inv.id === data.invoice_id);
+
+      const enrichedItems = data.items.map(it => {
+        const prod = products.find(p => p.id === it.product_id);
+        const price = prod ? parseFloat(prod.price || 0) : 0;
+        return {
+          product_id: it.product_id,
+          name: prod ? prod.name : 'Produk',
+          qty: it.qty,
+          price: price,
+          line_total: it.qty * price
+        };
+      });
+      const totalAmount = enrichedItems.reduce((s, it) => s + it.line_total, 0);
+
+      const returnData = {
+        ...(result || {}),
+        invoice_id: data.invoice_id,
+        invoice_no: invoice ? invoice.invoice_no : '',
+        customer_name: invoice ? invoice.customer_name : '-',
+        customer_phone: invoice ? invoice.customer_phone : '',
+        reason: data.reason,
+        items: enrichedItems,
+        total: totalAmount,
+        total_qty: data.items.reduce((s, it) => s + it.qty, 0),
+        cash_refund: totalAmount
+      };
+
       const responsePayload = {
         ok: true,
-        data: result,
-        message: 'Permintaan retur dikirim, menunggu persetujuan admin'
+        data: returnData,
+        message: 'Permintaan retur berhasil diproses'
       };
       if (idempotencyKey) await saveIdempotency(idempotencyKey, responsePayload);
       return res.status(201).json(responsePayload);

@@ -1,9 +1,17 @@
 <template>
   <div class="orders-page">
     <div class="header-action">
-      <div class="search-wrap">
-        <Icon name="search" size="16" />
-        <input v-model="searchQuery" type="text" placeholder="Cari nomor permintaan / sales..." />
+      <div class="search-input-wrapper">
+        <Icon name="search" size="16" class="search-icon" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Cari nomor permintaan / sales..."
+          class="search-input"
+        />
+        <button v-if="searchQuery" class="clear-btn" @click="searchQuery = ''" title="Hapus pencarian">
+          <Icon name="x" size="14" />
+        </button>
       </div>
       <router-link v-if="isSales" to="/orders/new" class="btn-add">
         <Icon name="plus" size="16" />
@@ -212,14 +220,110 @@ onMounted(load);
 </script>
 
 <style scoped>
-.orders-page { display: flex; flex-direction: column; gap: 12px; padding-bottom: 90px; }
-.header-action { display: flex; gap: 10px; flex-wrap: wrap; }
-.search-wrap { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border, #ddd); border-radius: 10px; padding: 8px 12px; background: var(--card-bg, #fff); }
-.search-wrap input { border: none; outline: none; flex: 1; background: transparent; }
-.btn-add { display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 10px; background: linear-gradient(135deg, var(--primary, #2563eb), #4f46e5); color: #fff; font-weight: 600; text-decoration: none; }
-.status-tabs { display: flex; gap: 6px; overflow-x: auto; }
-.tab-btn { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border, #ddd); background: transparent; cursor: pointer; white-space: nowrap; }
-.tab-btn.active { background: var(--primary, #2563eb); color: #fff; border-color: transparent; }
+.orders-page {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 90px;
+}
+.header-action {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.search-input-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-input {
+  width: 100%;
+  height: 42px;
+  padding: 0 36px 0 36px;
+  border-radius: var(--radius-card, 10px);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.search-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+.clear-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.clear-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-app);
+}
+.btn-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 16px;
+  border-radius: var(--radius-card, 10px);
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: all 0.15s ease;
+}
+.btn-add:hover {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+.status-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.tab-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.tab-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+}
 
 /* Pending summary card */
 .pending-summary-card {

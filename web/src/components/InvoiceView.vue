@@ -83,17 +83,43 @@
         <span class="sum-val font-bold">{{ formatRp(invoice.total_due) }}</span>
       </div>
 
-      <!-- Keterangan Penyesuaian Retur Barang -->
-      <div v-if="invoice.total_returned_amount > 0" class="return-adj-box">
+      <!-- Keterangan Penyesuaian Retur Barang & Daftar Produk Reject -->
+      <div v-if="invoice.total_returned_amount > 0 || (invoice.reject_items && invoice.reject_items.length > 0)" class="return-adj-box">
         <div class="sum-row text-danger font-bold">
-          <span>(-) Retur Barang:</span>
+          <span>⚠️ Retur / Reject Barang ({{ formatNumber(invoice.reject_total_qty || 0) }} pcs):</span>
           <span>- {{ formatRp(invoice.total_returned_amount) }}</span>
         </div>
-        <div v-for="ret in invoice.returns" :key="ret.id" class="ret-mini-detail">
-          <small>• Nota {{ ret.return_no }}: {{ ret.items?.map(i => `${i.name} (${formatNumber(i.qty)}x)`).join(', ') }}</small>
+
+        <!-- Tabel / Daftar Produk Reject & Jumlahnya -->
+        <div class="reject-items-container">
+          <div class="reject-table-title">Daftar Produk Reject:</div>
+          <table class="reject-table">
+            <thead>
+              <tr>
+                <th class="text-left">Barang</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Potongan</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="rj in (invoice.reject_items || [])" :key="rj.product_id">
+                <td class="text-left">
+                  <div class="font-bold">{{ rj.name }}</div>
+                  <small class="reject-reason">{{ rj.reason }}</small>
+                </td>
+                <td class="text-right font-bold text-danger">{{ formatNumber(rj.qty) }} pcs</td>
+                <td class="text-right text-danger">- {{ formatRp(rj.total) }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+
+        <div v-for="ret in invoice.returns" :key="ret.id" class="ret-mini-detail">
+          <small>• Nota Retur: {{ ret.return_no || '-' }} ({{ ret.date || '-' }})</small>
+        </div>
+
         <div class="sum-row adj-due-row">
-          <span class="sum-lbl">Tagihan Setelah Retur:</span>
+          <span class="sum-lbl font-bold">Tagihan Bersih Setelah Retur:</span>
           <span class="sum-val font-bold text-primary">{{ formatRp(invoice.adjusted_total_due) }}</span>
         </div>
       </div>
@@ -444,19 +470,53 @@ function handleWhatsApp() {
 .return-adj-box {
   background: #fef2f2;
   border-left: 3px solid var(--danger);
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin: 6px 0;
+}
+.reject-items-container {
+  margin: 6px 0;
+  background: #ffffff;
   padding: 6px 8px;
   border-radius: 4px;
-  margin: 4px 0;
+  border: 1px solid #fee2e2;
+}
+.reject-table-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-bottom: 4px;
+}
+.reject-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.reject-table th {
+  border-bottom: 1px solid #fee2e2;
+  padding: 3px 0;
+  font-size: 10px;
+  color: #991b1b;
+}
+.reject-table td {
+  padding: 4px 0;
+  border-bottom: 1px dashed #fef2f2;
+}
+.reject-reason {
+  display: block;
+  font-size: 9px;
+  color: #991b1b;
+  font-style: italic;
 }
 .ret-mini-detail {
-  font-size: 11px;
+  font-size: 10px;
   color: #64748b;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 .adj-due-row {
   border-top: 1px dashed #fca5a5;
-  margin-top: 4px;
-  padding-top: 4px;
+  margin-top: 6px;
+  padding-top: 5px;
 }
 .balance-card {
   display: flex;

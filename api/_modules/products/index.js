@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     // POST: Tambah Produk Baru
     // ==========================================
     if (req.method === 'POST') {
-      requireRole(authUser, ['admin', 'manajer']);
+      requireRole(authUser, ['admin']);
       const data = validateBody(productSchema, req.body);
 
       const newId = crypto.randomUUID();
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
     // PUT: Edit Data Barang (Nama, Harga, Gambar, dll)
     // ==========================================
     if (req.method === 'PUT') {
-      requireRole(authUser, ['admin', 'manajer']);
+      requireRole(authUser, ['admin']);
       const editSchema = productSchema.extend({
         id: z.string().min(1, 'ID barang wajib disertakan')
       });

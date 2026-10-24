@@ -34,9 +34,11 @@ export default async function handler(req, res) {
     }
 
     const historyItems = [];
+    const validReturns = (tabs.Returns || []).filter(r => r.status !== 'Ditolak');
 
     // Invoices
     invoices.forEach(inv => {
+      const invReturns = validReturns.filter(r => r.invoice_id === inv.id || r.ref_id === inv.id);
       historyItems.push({
         id: inv.id,
         type: 'Invoice',
@@ -44,7 +46,9 @@ export default async function handler(req, res) {
         customer: inv.customer_name,
         date: `${inv.invoice_date || inv.tx_date || ''} ${inv.invoice_time || inv.tx_time || ''}`,
         amount: parseFloat(inv.total_due || 0),
-        status: parseFloat(inv.remaining || 0) <= 0 ? 'Lunas' : 'Belum Lunas'
+        status: parseFloat(inv.remaining || 0) <= 0 ? 'Lunas' : 'Belum Lunas',
+        has_return: invReturns.length > 0,
+        return_count: invReturns.length
       });
     });
 

@@ -38,14 +38,22 @@
           v-for="item in paginatedItems"
           :key="item.id + item.type"
           class="card history-card"
-          :class="{ 'clickable-card': item.type === 'Invoice' }"
+          :class="{
+            'clickable-card': item.type === 'Invoice',
+            'card-has-return': item.has_return
+          }"
           @click="item.type === 'Invoice' && viewInvoice(item)"
         >
           <div class="h-top">
             <span class="h-title">{{ item.title }}</span>
-            <span class="badge" :class="getTypeBadge(item.type)">
-              {{ item.type }}
-            </span>
+            <div class="h-badges">
+              <span v-if="item.has_return" class="badge badge-retur-tag">
+                ↩ Ada Retur
+              </span>
+              <span class="badge" :class="getTypeBadge(item.type)">
+                {{ item.type }}
+              </span>
+            </div>
           </div>
 
           <div class="h-mid">
@@ -278,6 +286,21 @@ onMounted(() => {
 .history-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   border-color: #cbd5e1;
+}
+.card-has-return {
+  border-left: 4px solid #ef4444;
+}
+.h-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.badge-retur-tag {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  font-weight: 700;
+  font-size: 11px;
 }
 .h-top, .h-mid, .h-foot {
   display: flex;

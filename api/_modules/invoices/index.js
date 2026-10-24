@@ -34,8 +34,10 @@ export default async function handler(req, res) {
       const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
       const search = (req.query.search || '').toLowerCase().trim();
 
-      const tabs = await getTabsBatch(['Invoices', 'Branches']);
+      const tabs = await getTabsBatch(['Invoices', 'Branches', 'Returns', 'ReturnItems']);
       let invoices = tabs.Invoices || [];
+      const returns = (tabs.Returns || []).filter(r => r.status !== 'Ditolak');
+      const returnItems = tabs.ReturnItems || [];
 
       // RBAC
       if (authUser.role !== 'admin' && authUser.branch_id) {
@@ -62,11 +64,30 @@ export default async function handler(req, res) {
 
       const total = invoices.length;
       const startIndex = (page - 1) * limit;
-      const paginated = invoices.slice(startIndex, startIndex + limit).map(invoice => ({
-        ...invoice,
-        invoice_date: invoice.invoice_date || invoice.tx_date || '',
-        invoice_time: invoice.invoice_time || invoice.tx_time || ''
-      }));
+      const paginated = invoices.slice(startIndex, startIndex + limit).map(invoice => {
+        const invReturns = returns.filter(r => r.invoice_id === invoice.id || r.ref_id === invoice.id);
+        const invReturnIds = new Set(invReturns.map(r => r.id));
+        const invReturnItems = returnItems.filter(ri => invReturnIds.has(ri.return_id));
+        const totalReturnQty = invReturnItems.reduce((sum, it) => sum + (parseInt(it.qty, 10) || 0), 0);
+        const totalReturnAmount = invReturns.reduce((sum, r) => {
+          const directTotal = parseFloat(r.total || 0);
+          if (directTotal > 0) return sum + directTotal;
+          const itemsTot = invReturnItems
+            .filter(ri => ri.return_id === r.id)
+            .reduce((s, it) => s + ((parseInt(it.qty, 10) || 0) * (parseFloat(it.price) || 0)), 0);
+          return sum + itemsTot;
+        }, 0);
+
+        return {
+          ...invoice,
+          has_return: invReturns.length > 0,
+          return_count: invReturns.length,
+          return_total_qty: totalReturnQty,
+          total_returned_amount: totalReturnAmount,
+          invoice_date: invoice.invoice_date || invoice.tx_date || '',
+          invoice_time: invoice.invoice_time || invoice.tx_time || ''
+        };
+      });
 
       return res.status(200).json({
         ok: true,

@@ -14,36 +14,139 @@
     <!-- TAB 1: KASIR TRANSAKSI BARU -->
     <div v-if="tab === 'pos'" class="pos-body">
       <!-- Pilih Pelanggan -->
-      <div class="card p-14">
-        <div class="sec-title">1. Pilih Pelanggan</div>
+      <div class="card p-14 pos-section-card">
+        <div class="sec-title">
+          <span class="step-num">1</span>
+          <span>Pilih Pelanggan</span>
+        </div>
         <div class="cust-row">
-          <select v-model="selectedCustomerId" class="pos-select" @change="onCustomerChange">
-            <option value="">-- Pilih Pelanggan End Customer --</option>
-            <option v-for="c in customers" :key="c.id" :value="c.id">
-              {{ c.balance > 0 ? '⚠️ [ADA PIUTANG Rp ' + fmt(c.balance) + '] ' : '' }}{{ c.name }} ({{ c.phone || 'Tanpa No HP' }})
-            </option>
-          </select>
+          <!-- Dropdown Search Pelanggan -->
+          <div class="cust-select-dropdown" ref="customerDropdownRef">
+            <div
+              class="cust-trigger"
+              :class="{ 'is-open': showCustomerDropdown, 'has-selected': !!selectedCustomer }"
+              @click="toggleCustomerDropdown"
+            >
+              <div class="trigger-content">
+                <span v-if="!selectedCustomer" class="placeholder">-- Cari atau Pilih Pelanggan --</span>
+                <div v-else class="selected-cust-info">
+                  <span class="cust-main-name">
+                    <span v-if="selectedCustomer.balance > 0" class="mini-warning-tag">⚠️ Ada Bon</span>
+                    {{ selectedCustomer.name }}
+                  </span>
+                  <small class="cust-phone-sub">{{ selectedCustomer.phone || 'Tanpa No HP' }}</small>
+                </div>
+              </div>
+              <div class="trigger-actions">
+                <button
+                  v-if="selectedCustomerId"
+                  type="button"
+                  class="btn-clear-cust"
+                  @click.stop="clearCustomerSelection"
+                  title="Batalkan pilihan"
+                >
+                  <Icon name="x" size="14" />
+                </button>
+                <span class="dropdown-chevron">{{ showCustomerDropdown ? '▲' : '▼' }}</span>
+              </div>
+            </div>
+
+            <!-- Menu Dropdown dengan Search Bar -->
+            <div v-if="showCustomerDropdown" class="cust-dropdown-menu">
+              <div class="cust-search-box">
+                <Icon name="search" size="14" class="cust-search-icon" />
+                <input
+                  ref="custSearchInputRef"
+                  v-model="customerSearchQuery"
+                  type="text"
+                  placeholder="Ketik nama / no HP pelanggan..."
+                  class="cust-search-input"
+                  @click.stop
+                />
+                <button
+                  v-if="customerSearchQuery"
+                  type="button"
+                  class="btn-clear-cust-search"
+                  @click.stop="customerSearchQuery = ''"
+                >
+                  <Icon name="x" size="12" />
+                </button>
+              </div>
+
+              <div class="cust-options-list">
+                <div
+                  v-if="filteredCustomers.length === 0"
+                  class="no-cust-found"
+                >
+                  Pelanggan "{{ customerSearchQuery }}" tidak ditemukan
+                </div>
+                <div
+                  v-for="c in filteredCustomers"
+                  :key="c.id"
+                  class="cust-option-item"
+                  :class="{ active: c.id === selectedCustomerId, 'has-debt': c.balance > 0 }"
+                  @click="selectCustomer(c)"
+                >
+                  <div class="opt-left">
+                    <span class="opt-name">{{ c.name }}</span>
+                    <small class="opt-sub">{{ c.phone || 'Tanpa No HP' }} · {{ c.address || 'Tanpa Alamat' }}</small>
+                  </div>
+                  <div class="opt-right">
+                    <span v-if="c.balance > 0" class="opt-debt-badge">
+                      Bon: Rp {{ fmt(c.balance) }}
+                    </span>
+                    <span v-else class="opt-lunas-badge">Lunas</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div v-if="selectedCustomer" class="cust-meta">
-          <div><strong>Alamat:</strong> {{ selectedCustomer.address || '-' }}</div>
-          <div :style="selectedCustomer.balance > 0 ? 'color: #dc2626; font-weight: bold; font-size: 13px;' : ''">
-            <strong>Piutang/Bon:</strong> {{ selectedCustomer.balance > 0 ? '⚠️ Rp ' + fmt(selectedCustomer.balance) + ' (Ada Tagihan Belum Lunas)' : 'Rp 0 (Lunas)' }}
+          <div class="meta-item">
+            <span class="meta-lbl">Alamat:</span>
+            <span class="meta-val">{{ selectedCustomer.address || '-' }}</span>
           </div>
-          <div><strong>Batas Kredit:</strong> {{ selectedCustomer.credit_limit > 0 ? 'Rp ' + fmt(selectedCustomer.credit_limit) : 'Tanpa Batas' }}</div>
+          <div class="meta-item" :class="{ 'meta-has-balance': selectedCustomer.balance > 0 }">
+            <span class="meta-lbl">Piutang / Bon:</span>
+            <span class="meta-val font-bold">
+              {{ selectedCustomer.balance > 0 ? '⚠️ Rp ' + fmt(selectedCustomer.balance) + ' (Belum Lunas)' : 'Rp 0 (Lunas)' }}
+            </span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-lbl">Batas Kredit:</span>
+            <span class="meta-val">{{ selectedCustomer.credit_limit > 0 ? 'Rp ' + fmt(selectedCustomer.credit_limit) : 'Tanpa Batas' }}</span>
+          </div>
         </div>
       </div>
 
       <!-- Pilih Barang dari Stok Sales Sendiri -->
-      <div class="card p-14">
-        <div class="sec-title">2. Pilih Barang (Dari Stok Saya)</div>
-        <div class="search-wrap">
-          <Icon name="search" size="14" />
-          <input v-model="search" type="text" placeholder="Cari nama barang di stok Anda..." />
+      <div class="card p-14 pos-section-card">
+        <div class="sec-title-bar">
+          <div class="sec-title">
+            <span class="step-num">2</span>
+            <span>Pilih Barang (Stok Saya)</span>
+          </div>
+          <small class="stock-summary-badge">{{ filteredStock.length }} barang</small>
+        </div>
+
+        <div class="search-input-wrapper">
+          <Icon name="search" size="16" class="search-icon" />
+          <input
+            v-model="search"
+            type="text"
+            placeholder="Cari nama barang di stok Anda..."
+            class="search-input"
+          />
+          <button v-if="search" class="clear-btn" @click="search = ''" title="Hapus pencarian">
+            <Icon name="x" size="14" />
+          </button>
         </div>
 
         <div v-if="loadingStock" class="empty">Memuat stok Anda...</div>
         <div v-else-if="filteredStock.length === 0" class="empty">
-          <p>Tidak ada stok yang tersedia.</p>
+          <Icon name="package" size="32" class="empty-icon" />
+          <p>Tidak ada stok yang cocok.</p>
           <small class="text-muted">Minta barang ke admin lewat menu Permintaan Barang bila stok kosong.</small>
         </div>
         <div v-else class="stock-grid">
@@ -56,19 +159,36 @@
             :disabled="s.stock <= 0"
             @click="addToCart(s)"
           >
-            <span class="stock-emoji">{{ s.emoji || '📦' }}</span>
-            <span class="stock-name">{{ s.product_name }}</span>
-            <span class="stock-qty" :class="{ danger: s.stock <= 0 }">Stok: {{ fmt(s.stock) }} pcs</span>
-            <span class="stock-price">Rp {{ fmt(s.price) }}</span>
+            <div class="tile-thumb">
+              <img v-if="isValidImage(s.image)" :src="s.image" :alt="s.product_name" class="tile-img" @error="s.image = ''" />
+              <span v-else class="stock-emoji">{{ s.emoji || '📦' }}</span>
+            </div>
+            <div class="tile-info">
+              <span class="stock-name">{{ s.product_name }}</span>
+              <div class="tile-meta-row">
+                <span class="stock-qty" :class="{ danger: s.stock <= 0 }">Stok: {{ fmt(s.stock) }}</span>
+                <span class="stock-price">Rp {{ fmt(s.price) }}</span>
+              </div>
+            </div>
             <span v-if="cartQtyOf(s.product_id) > 0" class="stock-badge">{{ fmt(cartQtyOf(s.product_id)) }}</span>
           </button>
         </div>
       </div>
 
       <!-- Keranjang & Checkout -->
-      <div class="card p-14">
-        <div class="sec-title">3. Keranjang Penjualan ({{ fmt(cart.length) }})</div>
-        <div v-if="cart.length === 0" class="empty">Keranjang kosong. Pilih barang di atas.</div>
+      <div class="card p-14 pos-section-card">
+        <div class="sec-title-bar">
+          <div class="sec-title">
+            <span class="step-num">3</span>
+            <span>Keranjang Penjualan</span>
+          </div>
+          <small class="stock-summary-badge">{{ cart.length }} item</small>
+        </div>
+        <div v-if="cart.length === 0" class="empty">
+          <Icon name="shopping-cart" size="32" class="empty-icon" />
+          <p>Keranjang masih kosong.</p>
+          <small class="text-muted">Ketuk barang pada daftar di atas untuk menambahkan.</small>
+        </div>
         <div v-else class="cart-list">
           <div v-for="(it, idx) in cart" :key="it.product_id" class="cart-row">
             <div class="cart-info">
@@ -94,7 +214,7 @@
           </div>
           <div class="sum-row">
             <span>Bon / Piutang Sebelumnya</span>
-            <span>Rp {{ fmt(selectedCustomer?.balance || 0) }}</span>
+            <span :class="selectedCustomer?.balance > 0 ? 'text-danger font-bold' : ''">Rp {{ fmt(selectedCustomer?.balance || 0) }}</span>
           </div>
           <div class="sum-row total">
             <span>Total Tagihan</span>
@@ -154,20 +274,31 @@
               v-for="tx in transactions"
               :key="tx.id + tx.type"
               class="card inv-card"
-              :class="{ 'payment-card': tx.type === 'Pelunasan' }"
+              :class="{
+                'payment-card': tx.type === 'Pelunasan',
+                'has-return-card': tx.has_return
+              }"
               @click="tx.type === 'Invoice' && viewInvoice(tx)"
             >
               <div class="inv-top">
                 <strong><Icon :name="tx.type === 'Invoice' ? 'file-text' : 'dollar-sign'" size="14" /> {{ tx.title }}</strong>
-                <span v-if="tx.type === 'Invoice'" class="badge" :class="parseFloat(tx.remaining) <= 0 ? 'badge-lunas' : 'badge-tempo'">
-                  {{ parseFloat(tx.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + fmt(tx.remaining) }}
-                </span>
-                <span v-else class="badge badge-lunas">Pembayaran Masuk</span>
+                <div class="badges-row">
+                  <span v-if="tx.has_return" class="badge badge-retur-flag" title="Ada pengembalian/retur barang">
+                    ↩ Ada Retur{{ tx.return_total_qty ? ` (${tx.return_total_qty} pcs)` : '' }}
+                  </span>
+                  <span v-if="tx.type === 'Invoice'" class="badge" :class="parseFloat(tx.remaining) <= 0 ? 'badge-lunas' : 'badge-tempo'">
+                    {{ parseFloat(tx.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + fmt(tx.remaining) }}
+                  </span>
+                  <span v-else class="badge badge-lunas">Pembayaran Masuk</span>
+                </div>
               </div>
               <div class="inv-cust">{{ tx.customer_name || tx.customer }}</div>
               <div class="inv-bottom">
                 <span>{{ tx.invoice_date || tx.tx_date || tx.date }}</span>
                 <strong>{{ tx.type === 'Invoice' ? 'Rp ' + fmt(tx.total_due) : '+ Rp ' + fmt(tx.amount) }}</strong>
+              </div>
+              <div v-if="tx.has_return && tx.total_returned_amount" class="inv-return-info">
+                <small class="text-danger">Potongan retur: - Rp {{ fmt(tx.total_returned_amount) }}</small>
               </div>
               <small v-if="tx.type === 'Pelunasan' && tx.method" class="payment-method">
                 Metode: {{ tx.method }}
@@ -192,7 +323,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
@@ -211,6 +342,51 @@ const payments = ref([]);
 const cart = ref([]);
 
 const selectedCustomerId = ref('');
+const showCustomerDropdown = ref(false);
+const customerSearchQuery = ref('');
+const customerDropdownRef = ref(null);
+const custSearchInputRef = ref(null);
+
+const filteredCustomers = computed(() => {
+  if (!customerSearchQuery.value) return customers.value;
+  const q = customerSearchQuery.value.toLowerCase().trim();
+  return customers.value.filter(c =>
+    (c.name && c.name.toLowerCase().includes(q)) ||
+    (c.phone && c.phone.toLowerCase().includes(q)) ||
+    (c.address && c.address.toLowerCase().includes(q))
+  );
+});
+
+function toggleCustomerDropdown() {
+  showCustomerDropdown.value = !showCustomerDropdown.value;
+  if (showCustomerDropdown.value) {
+    customerSearchQuery.value = '';
+    setTimeout(() => {
+      if (custSearchInputRef.value) custSearchInputRef.value.focus();
+    }, 100);
+  }
+}
+
+function selectCustomer(c) {
+  selectedCustomerId.value = c.id;
+  showCustomerDropdown.value = false;
+  customerSearchQuery.value = '';
+  onCustomerChange();
+}
+
+function clearCustomerSelection() {
+  selectedCustomerId.value = '';
+  showCustomerDropdown.value = false;
+  customerSearchQuery.value = '';
+  onCustomerChange();
+}
+
+function handleClickOutside(e) {
+  if (customerDropdownRef.value && !customerDropdownRef.value.contains(e.target)) {
+    showCustomerDropdown.value = false;
+  }
+}
+
 const search = ref('');
 const payMethod = ref('Tunai');
 const paidAmount = ref(0);
@@ -263,6 +439,12 @@ function cartQtyOf(prodId) {
   return cart.value.find(i => i.product_id === prodId)?.qty || 0;
 }
 
+function isValidImage(img) {
+  if (!img || typeof img !== 'string') return false;
+  const s = img.trim();
+  return s.startsWith('data:image/') || s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/');
+}
+
 function addToCart(s) {
   const ex = cart.value.find(i => i.product_id === s.product_id);
   if (ex) {
@@ -273,6 +455,7 @@ function addToCart(s) {
       product_id: s.product_id,
       product_name: s.product_name,
       emoji: s.emoji || '📦',
+      image: s.image || '',
       price: s.price || 0,
       qty: 1,
       maxStock: s.stock
@@ -379,59 +562,795 @@ async function viewInvoice(inv) {
 onMounted(() => {
   loadData();
   loadInvoices();
+  document.addEventListener('click', handleClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
 });
 </script>
 
 <style scoped>
-.pos-page { display: flex; flex-direction: column; gap: 14px; padding-bottom: 90px; }
-.tabs { display: flex; gap: 8px; }
-.tab-btn { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border, #ddd); background: var(--card-bg, #fff); font-weight: 600; cursor: pointer; }
-.tab-btn.active { background: var(--primary, #2563eb); color: #fff; border-color: transparent; }
-.p-14 { padding: 14px; }
-.sec-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
-.pos-select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border, #ddd); background: transparent; }
-.cust-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; font-size: 12px; margin-top: 8px; padding: 8px; background: rgba(0,0,0,.03); border-radius: 8px; }
-.search-wrap { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
-.search-wrap input { border: none; outline: none; flex: 1; background: transparent; }
-.stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; max-height: 380px; overflow-y: auto; }
-.stock-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px; border: 1.5px solid var(--border, #e5e5e5); border-radius: 10px; background: var(--card-bg, #fff); cursor: pointer; text-align: center; }
-.stock-tile.chosen { border-color: var(--primary, #2563eb); }
-.stock-tile.zero { opacity: .4; cursor: not-allowed; }
-.stock-emoji { font-size: 32px; }
-.stock-name { font-size: 12px; font-weight: 600; line-height: 1.2; }
-.stock-qty { font-size: 11px; font-weight: 700; color: #059669; }
-.stock-qty.danger { color: #dc2626; }
-.stock-price { font-size: 12px; font-weight: 700; color: var(--primary, #2563eb); }
-.stock-badge { position: absolute; top: 6px; right: 6px; background: var(--primary, #2563eb); color: #fff; border-radius: 999px; min-width: 20px; height: 20px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-.cart-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-.cart-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border, #eee); }
-.cart-name { font-weight: 600; font-size: 13px; }
-.cart-ctrl { display: flex; align-items: center; gap: 12px; }
-.qty-btn-group { display: flex; align-items: center; gap: 4px; }
-.qty-btn-group button { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border, #ddd); background: transparent; cursor: pointer; }
-.qty-btn-group input { width: 44px; text-align: center; }
-.cart-subtotal { font-weight: 700; font-size: 13px; min-width: 70px; text-align: right; }
-.checkout-box { border-top: 2px solid var(--border, #eee); padding-top: 12px; }
-.sum-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
-.sum-row.total { padding: 8px 0; font-size: 15px; border-top: 1px dashed var(--border, #ddd); margin-top: 6px; }
-.total-big { color: var(--primary, #2563eb); font-size: 18px; }
-.pay-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-.flex-between { display: flex; justify-content: space-between; align-items: center; }
-.btn-quick { border: none; background: none; color: var(--primary, #2563eb); font-weight: 600; cursor: pointer; font-size: 12px; }
-.change-info { display: flex; justify-content: space-between; align-items: center; background: #ecfdf5; border: 1px solid #a7f3d0; color: #047857; padding: 6px 12px; border-radius: 8px; font-size: 13px; margin-top: 6px; }
-.btn-checkout { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: none; border-radius: 12px; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
-.btn-checkout:disabled { opacity: .5; cursor: not-allowed; }
-.empty { text-align: center; color: var(--text-muted, #888); padding: 24px; font-size: 13px; }
-.inv-list { display: flex; flex-direction: column; gap: 10px; }
-.inv-card { padding: 14px; cursor: pointer; }
-.inv-card.payment-card { cursor: default; }
-.payment-method { display: block; margin-top: 6px; color: var(--text-muted, #888); }
-.inv-top, .inv-bottom { display: flex; justify-content: space-between; align-items: center; }
-.inv-cust { margin: 6px 0; font-size: 14px; font-weight: 600; }
-.badge-lunas { background: rgba(16,185,129,.15); color: #059669; }
-.badge-tempo { background: rgba(239,68,68,.15); color: #dc2626; }
-.sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 1000; }
-.sheet-content { background: var(--card-bg, #fff); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 18px; }
-.sheet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.sheet-close { background: none; border: none; cursor: pointer; }
+.pos-page {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 90px;
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+}
+.tab-btn {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: var(--radius-card, 12px);
+  border: 1.5px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tab-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.pos-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pos-section-card {
+  padding: 16px;
+  border-radius: var(--radius-card, 12px);
+}
+
+.sec-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.sec-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-main);
+  margin-bottom: 12px;
+}
+.sec-title-bar .sec-title {
+  margin-bottom: 0;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stock-summary-badge {
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cust-select-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.cust-trigger {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-color);
+  background: var(--bg-card);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cust-trigger:hover {
+  border-color: #93c5fd;
+}
+.cust-trigger.is-open {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+.cust-trigger.has-selected {
+  background: var(--bg-card);
+}
+
+.trigger-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.placeholder {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.selected-cust-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cust-main-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-warning-tag {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+.cust-phone-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.trigger-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.btn-clear-cust {
+  background: var(--bg-app);
+  border: none;
+  color: var(--text-muted);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.btn-clear-cust:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.dropdown-chevron {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Dropdown Menu Popup */
+.cust-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 500;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cust-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-color);
+}
+.cust-search-icon {
+  position: absolute;
+  left: 18px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.cust-search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 32px 0 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: 13px;
+  outline: none;
+}
+.cust-search-input:focus {
+  border-color: var(--primary);
+}
+.btn-clear-cust-search {
+  position: absolute;
+  right: 16px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.cust-options-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.no-cust-found {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cust-option-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(0,0,0,0.03);
+  transition: background 0.15s ease;
+}
+.cust-option-item:hover {
+  background: var(--bg-app);
+}
+.cust-option-item.active {
+  background: #eff6ff;
+  border-left: 3px solid var(--primary);
+}
+.cust-option-item.has-debt {
+  background: #fffbfb;
+}
+.cust-option-item.has-debt:hover {
+  background: #fef2f2;
+}
+
+.opt-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.opt-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.opt-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.opt-right {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.opt-debt-badge {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.opt-lunas-badge {
+  background: #dcfce7;
+  color: #15803d;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pos-select {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.pos-select:focus {
+  border-color: var(--primary);
+}
+
+.cust-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  font-size: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--bg-app);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.meta-lbl {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.meta-val {
+  color: var(--text-main);
+  font-size: 12px;
+}
+.meta-has-balance .meta-val {
+  color: #dc2626;
+  font-size: 13px;
+}
+
+/* Search bar styling */
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.search-input:focus {
+  border-color: var(--primary);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+.clear-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+/* Stock Tiles Grid */
+.stock-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.stock-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.stock-tile:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: #93c5fd;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
+.stock-tile.chosen {
+  border-color: var(--primary);
+  background: #f0f7ff;
+}
+.stock-tile.zero {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(80%);
+}
+
+.tile-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: var(--bg-app);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.tile-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.stock-emoji {
+  font-size: 26px;
+}
+.tile-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+}
+.stock-name {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-main);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 28px;
+}
+.tile-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.stock-qty {
+  font-size: 11px;
+  font-weight: 700;
+  color: #15803d;
+}
+.stock-qty.danger {
+  color: #dc2626;
+}
+.stock-price {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary);
+}
+.stock-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 999px;
+  min-width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.35);
+}
+
+/* Cart & Checkout */
+.cart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.cart-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border-color);
+}
+.cart-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+.cart-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.qty-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px;
+}
+.qty-btn-group button {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-weight: 700;
+  cursor: pointer;
+}
+.qty-btn-group input {
+  width: 44px;
+  text-align: center;
+  border: none;
+  background: transparent;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.cart-subtotal {
+  font-weight: 800;
+  font-size: 13px;
+  min-width: 76px;
+  text-align: right;
+  color: var(--text-main);
+}
+
+.checkout-box {
+  border-top: 2px solid var(--border-color);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sum-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.sum-row.total {
+  padding: 8px 0;
+  font-size: 15px;
+  border-top: 1px dashed var(--border-color);
+  margin-top: 6px;
+  color: var(--text-main);
+}
+.total-big {
+  color: var(--primary);
+  font-size: 18px;
+}
+
+.pay-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.btn-quick {
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 12px;
+}
+.currency-input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: 16px;
+  font-weight: 800;
+}
+.change-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.btn-checkout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  margin-top: 6px;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.3);
+  transition: all 0.15s ease;
+}
+.btn-checkout:hover:not(:disabled) {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+.btn-checkout:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px 16px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.empty-icon {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* History */
+.inv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.inv-card {
+  padding: 14px 16px;
+  border-radius: var(--radius-card, 12px);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.inv-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.inv-card.payment-card {
+  cursor: default;
+}
+.payment-method {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.inv-top, .inv-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.inv-cust {
+  margin: 6px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.badge-lunas {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+.badge-tempo {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+.badges-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.badge-retur-flag {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  font-weight: 700;
+}
+.has-return-card {
+  border-left: 4px solid #ef4444;
+}
+.inv-return-info {
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Modal */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+}
+.sheet-content {
+  background: var(--bg-card);
+  width: 100%;
+  max-width: 560px;
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: 18px 18px 0 0;
+  padding: 18px;
+}
+.sheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.sheet-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
 </style>

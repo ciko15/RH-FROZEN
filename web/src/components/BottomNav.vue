@@ -18,13 +18,7 @@
       <span class="label">Kasir</span>
     </router-link>
 
-    <!-- 4. Stok (Stok Saya / Stok Admin) -->
-    <router-link to="/stock" class="nav-item" active-class="active">
-      <Icon name="stock" size="20" class="nav-svg" />
-      <span class="label">Stok</span>
-    </router-link>
-
-    <!-- 5. Retur Barang (Approval Admin) -->
+    <!-- 4. Retur Barang (Approval Admin) -->
     <router-link to="/returns" class="nav-item" active-class="active">
       <Icon name="package" size="20" class="nav-svg" />
       <span class="label">Retur</span>

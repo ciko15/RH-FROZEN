@@ -17,7 +17,7 @@
         @click="showAddModal = true"
       >
         <Icon name="plus" size="15" />
-        <span>Barang</span>
+        <span>Tambah Barang</span>
       </button>
       <router-link
         v-if="canManageStock"
@@ -116,16 +116,25 @@
             </div>
             <div class="stock-actions-btn" v-if="canManageStock">
               <button
+                class="btn-add-stock"
+                @click="openAddStockModal(p)"
+                title="Tambah Stok Masuk"
+              >
+                <Icon name="plus" size="12" />
+                <span>+ Stok</span>
+              </button>
+              <button
                 class="btn-edit"
                 @click="openEditModal(p)"
                 title="Edit Data & Gambar Barang"
               >
-                <Icon name="edit" size="13" />
+                <Icon name="edit" size="12" />
                 <span>Edit</span>
               </button>
               <button
                 class="btn-adjust"
                 @click="openAdjustModal(p)"
+                title="Koreksi / Penyesuaian Stok"
               >
                 Koreksi
               </button>
@@ -206,18 +215,40 @@
           <div class="form-row">
             <div class="form-group">
               <label>Harga Jual *</label>
-              <input v-model.number="editForm.price" type="number" min="1" required />
+              <input
+                type="text"
+                inputmode="numeric"
+                :value="formatNumber(editForm.price)"
+                @input="onFormattedInput(editForm, 'price', $event)"
+                placeholder="0"
+                required
+              />
             </div>
             <div class="form-group" v-if="canViewCost">
               <label>Harga Beli (HPP)</label>
-              <input v-model.number="editForm.cost_price" type="number" min="0" />
+              <input
+                type="text"
+                inputmode="numeric"
+                :value="formatNumber(editForm.cost_price)"
+                @input="onFormattedInput(editForm, 'cost_price', $event)"
+                placeholder="0"
+              />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label>Stok Saat Ini</label>
-              <input v-model.number="editForm.stock" type="number" min="0" />
+              <label>Stok Saat Ini (Terkunci)</label>
+              <div class="locked-stock-input">
+                <input
+                  type="text"
+                  :value="formatNumber(editForm.stock) + ' pcs'"
+                  readonly
+                  disabled
+                  class="input-disabled"
+                />
+              </div>
+              <small class="helper-note">Ubah stok melalui tombol <strong>+ Stok</strong> atau <strong>Koreksi</strong>.</small>
             </div>
             <div class="form-group">
               <label>Ikon Emoji (Jika Tanpa Foto)</label>
@@ -241,7 +272,7 @@
     <div v-if="adjustProduct" class="sheet-overlay" @click.self="adjustProduct = null">
       <div class="sheet-content">
         <div class="sheet-head">
-          <h3>Koreksi Stok: {{ adjustProduct.name }}</h3>
+          <h3>{{ adjustReason === 'Masuk' ? 'Tambah Stok Masuk: ' : 'Koreksi Stok: ' }}{{ adjustProduct.name }}</h3>
           <button class="sheet-close" @click="adjustProduct = null">
             <Icon name="x" size="18" />
           </button>
@@ -250,24 +281,25 @@
         <div class="sheet-body">
           <div class="cur-stock-box">
             <span>Stok Sistem Saat Ini:</span>
-            <strong>{{ formatNumber(adjustProduct.stock) }}</strong>
+            <strong>{{ formatNumber(adjustProduct.stock) }} pcs</strong>
           </div>
 
           <div class="form-group">
             <label>Jenis Penyesuaian</label>
             <select v-model="adjustReason">
-              <option value="Masuk">Stok Masuk (+)</option>
-              <option value="Koreksi">Koreksi Stok (+/-)</option>
+              <option value="Masuk">Tambah Stok Masuk (+)</option>
+              <option value="Koreksi">Koreksi / Penyesuaian (+/-)</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label>Jumlah Perubahan (Gunakan minus '-' untuk pengurangan)</label>
+            <label>{{ adjustReason === 'Masuk' ? 'Jumlah Stok yang Ditambahkan (pcs) *' : 'Jumlah Perubahan (Gunakan minus "-" untuk pengurangan)' }}</label>
             <input
-              v-model.number="adjustChange"
-              type="number"
+              type="text"
               inputmode="numeric"
-              placeholder="Contoh: 10 atau -5"
+              :value="adjustChange === null || adjustChange === undefined ? '' : formatChangeNumber(adjustChange)"
+              @input="onAdjustChangeInput($event)"
+              :placeholder="adjustReason === 'Masuk' ? 'Contoh: 50' : 'Contoh: 10 atau -5'"
             />
           </div>
 
@@ -279,14 +311,14 @@
           <div class="cur-stock-box">
             <span>Perkiraan Stok Akhir:</span>
             <strong :class="adjustFinalStock < 0 ? 'text-danger' : 'text-success'">
-              {{ adjustFinalStock }}
+              {{ formatNumber(adjustFinalStock) }} pcs
             </strong>
           </div>
 
           <button
             class="btn-save"
             @click="submitAdjust"
-            :disabled="adjustLoading || adjustFinalStock < 0"
+            :disabled="adjustLoading || adjustFinalStock < 0 || !adjustChange"
           >
             <Icon name="check" size="16" v-if="!adjustLoading" />
             <span>{{ adjustLoading ? 'Menyimpan...' : 'Simpan Penyesuaian' }}</span>
@@ -342,18 +374,37 @@
           <div class="form-row">
             <div class="form-group">
               <label>Harga Jual *</label>
-              <input v-model.number="newProd.price" type="number" min="1" required />
+              <input
+                type="text"
+                inputmode="numeric"
+                :value="formatNumber(newProd.price)"
+                @input="onFormattedInput(newProd, 'price', $event)"
+                placeholder="0"
+                required
+              />
             </div>
             <div class="form-group" v-if="canViewCost">
               <label>Harga Beli (HPP)</label>
-              <input v-model.number="newProd.cost_price" type="number" min="0" />
+              <input
+                type="text"
+                inputmode="numeric"
+                :value="formatNumber(newProd.cost_price)"
+                @input="onFormattedInput(newProd, 'cost_price', $event)"
+                placeholder="0"
+              />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
               <label>Stok Awal</label>
-              <input v-model.number="newProd.stock" type="number" min="0" />
+              <input
+                type="text"
+                inputmode="numeric"
+                :value="formatNumber(newProd.stock)"
+                @input="onFormattedInput(newProd, 'stock', $event)"
+                placeholder="0"
+              />
             </div>
             <div class="form-group">
               <label>Ikon Emoji (Jika Tanpa Foto)</label>
@@ -395,8 +446,8 @@ const stockSource = ref('mine'); // 'mine' | 'admin'
 const mySalesStock = ref([]);
 const myStockCount = computed(() => mySalesStock.value.filter(s => s.stock > 0).length);
 
-const canManageStock = computed(() => user.value?.role === 'admin' && stockSource.value !== 'mine');
-const canViewCost = computed(() => user.value?.role === 'admin');
+const canManageStock = computed(() => user.value?.role === 'admin' || (user.value?.role !== 'sales' && stockSource.value !== 'mine'));
+const canViewCost = computed(() => user.value?.role === 'admin' || user.value?.role === 'manajer');
 
 function switchSource(src) {
   stockSource.value = src;
@@ -508,6 +559,35 @@ function openEditModal(p) {
     emoji: p.emoji || '📦',
     image: p.image || ''
   };
+}
+
+function onFormattedInput(obj, field, event) {
+  const raw = event.target.value.replace(/\D/g, '');
+  const val = raw ? parseInt(raw, 10) : 0;
+  obj[field] = val;
+  event.target.value = formatNumber(val);
+}
+
+function formatChangeNumber(val) {
+  if (val === null || val === undefined || isNaN(val)) return '';
+  const num = Number(val);
+  const isNegative = num < 0;
+  const absFormatted = formatNumber(Math.abs(num));
+  return isNegative ? `-${absFormatted}` : absFormatted;
+}
+
+function onAdjustChangeInput(event) {
+  const raw = event.target.value;
+  const isNegative = raw.trim().startsWith('-');
+  const cleanDigits = raw.replace(/\D/g, '');
+  if (!cleanDigits) {
+    adjustChange.value = null;
+    event.target.value = isNegative ? '-' : '';
+    return;
+  }
+  const intVal = parseInt(cleanDigits, 10);
+  adjustChange.value = isNegative ? -intVal : intVal;
+  event.target.value = (isNegative ? '-' : '') + formatNumber(intVal);
 }
 
 // Handler kompresi & resize gambar via HTML Canvas sebelum dikirim
@@ -629,6 +709,13 @@ async function fetchProducts() {
   } finally {
     loading.value = false;
   }
+}
+
+function openAddStockModal(p) {
+  adjustProduct.value = p;
+  adjustReason.value = 'Masuk';
+  adjustChange.value = null;
+  adjustNote.value = 'Penambahan stok gudang';
 }
 
 function openAdjustModal(p) {
@@ -971,6 +1058,30 @@ onMounted(() => {
   gap: 6px;
   align-items: center;
 }
+.btn-add-stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+  border: 1px solid rgba(22, 163, 74, 0.3);
+  font-size: 11px;
+  font-weight: 700;
+  min-height: 28px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+[data-theme="dark"] .btn-add-stock {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+.btn-add-stock:hover {
+  background: #16a34a;
+  color: #ffffff;
+}
 .btn-edit {
   display: inline-flex;
   align-items: center;
@@ -1167,5 +1278,21 @@ onMounted(() => {
   min-height: 28px;
   padding: 2px 8px;
   border-radius: 6px;
+}
+.input-disabled {
+  background: var(--bg-app) !important;
+  color: var(--text-muted) !important;
+  cursor: not-allowed;
+  opacity: 0.85;
+  border-style: dashed !important;
+  font-weight: 700;
+}
+.helper-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+.helper-note strong {
+  color: var(--primary);
 }
 </style>
