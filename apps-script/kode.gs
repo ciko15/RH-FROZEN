@@ -837,11 +837,17 @@ function createSalesTx(payload) {
     // Simpan Invoice
     const newInvoice = {
       id: invoiceId, invoice_no: invoiceNo, tx_date: txDate, tx_time: txTime,
+      invoice_date: txDate, invoice_time: txTime,
       due_date: dueDateStr, customer_id: customer.id, customer_name: customer.name,
       customer_address: customer.address, branch_id: branch_id || customer.branch_id,
       sales_id: user_id, total_qty, subtotal, discount_total, previous_balance,
       total_due, paid_amount: finalPaid, remaining, pay_method: pay_method || 'Tunai',
-      note: note || '', approved_by: approved_by || '', created_by: user_id
+      note: note || '', approved_by: approved_by || '', created_by: user_id,
+      items: validatedItems.map(item => ({
+        id: Utilities.getUuid(), product_id: item.product_id, name: item.name,
+        qty: item.qty, price: item.price, discount: item.discount,
+        line_total: (item.qty * item.price) - item.discount
+      }))
     };
     appendSheetRow('Invoices', newInvoice, ['id', 'invoice_no', 'tx_date', 'tx_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by']);
 
@@ -1269,7 +1275,10 @@ function generateInvoicePdf(payload) {
   const invoice = invoices.find(inv => inv.id === invoice_id);
   if (!invoice) return { ok: false, error: 'NOT_FOUND', message: 'Invoice tidak ditemukan' };
 
-  const orderItems = getSheetData('OrderItems').filter(oi => oi.order_id === invoice.order_id);
+  const invoiceItems = getSheetData('InvoiceItems').filter(item => item.invoice_id === invoice.id);
+  const items = invoiceItems.length
+    ? invoiceItems
+    : getSheetData('OrderItems').filter(item => item.order_id === invoice.order_id);
   const configs = getSheetData('Config');
   const getCfg = k => {
     const item = configs.find(c => c.key === k);
@@ -1281,14 +1290,15 @@ function generateInvoicePdf(payload) {
   const invoiceFooter = getCfg('invoice_footer') || '';
 
   const formatRp = num => 'Rp' + Math.round(num || 0).toLocaleString('id-ID');
+  const formatQty = num => Math.round(parseFloat(num || 0)).toLocaleString('id-ID');
 
   let itemsHtml = '';
-  for (const it of orderItems) {
+  for (const it of items) {
     const lineTotal = (parseInt(it.qty, 10) * parseFloat(it.price)) - parseFloat(it.discount || 0);
     itemsHtml += `
       <tr>
         <td style="padding:6px 0;">${it.name}${parseFloat(it.discount) > 0 ? `<br><small style="color:#666">Diskon: ${formatRp(it.discount)}</small>` : ''}</td>
-        <td style="text-align:right;padding:6px 0;">${it.qty}</td>
+        <td style="text-align:right;padding:6px 0;">${formatQty(it.qty)}</td>
         <td style="text-align:right;padding:6px 0;">${formatRp(it.price)}</td>
         <td style="text-align:right;padding:6px 0;">${formatRp(lineTotal)}</td>
       </tr>
@@ -1331,7 +1341,7 @@ function generateInvoicePdf(payload) {
       </div>
 
       <table class="info-table" style="width:100%;margin-bottom:10px;">
-        <tr><td style="width:120px;font-weight:bold;">Tanggal:</td><td>${invoice.invoice_date}</td></tr>
+        <tr><td style="width:120px;font-weight:bold;">Tanggal:</td><td>${invoice.invoice_date || invoice.tx_date || ''}</td></tr>
         <tr><td style="font-weight:bold;">Nama Pelanggan:</td><td>${invoice.customer_name}</td></tr>
         <tr><td style="font-weight:bold;">Alamat:</td><td>${invoice.customer_address}</td></tr>
         ${!isLunas ? `<tr><td style="font-weight:bold;">Jatuh Tempo:</td><td>${invoice.due_date}</td></tr>` : ''}
@@ -1352,7 +1362,7 @@ function generateInvoicePdf(payload) {
           ${itemsHtml}
           <tr style="font-weight:bold;">
             <td style="padding-top:10px;">Total belanja</td>
-            <td style="text-align:right;padding-top:10px;">${invoice.total_qty}</td>
+            <td style="text-align:right;padding-top:10px;">${formatQty(invoice.total_qty)}</td>
             <td></td>
             <td style="text-align:right;padding-top:10px;">${formatRp(invoice.subtotal)}</td>
           </tr>

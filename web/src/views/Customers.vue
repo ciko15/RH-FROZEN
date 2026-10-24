@@ -37,7 +37,12 @@
           class="card cust-card"
         >
           <div class="cust-head">
-            <span class="cust-name">{{ c.name }}</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="cust-name">{{ c.name }}</span>
+              <span v-if="c.balance > 0" class="badge badge-dibatalkan" style="font-weight:700;">
+                ⚠️ Piutang: Rp {{ formatNumber(c.balance) }}
+              </span>
+            </div>
             <span class="badge" :class="c.active ? 'badge-dikirim' : 'badge-dibatalkan'">
               {{ c.active ? 'Aktif' : 'Nonaktif' }}
             </span>
@@ -49,7 +54,8 @@
             <span><Icon name="phone" size="13" /> {{ c.phone || '-' }}</span>
             <div class="credit-info">
               <span>Batas Kredit: <strong>{{ c.credit_limit > 0 ? 'Rp ' + formatNumber(c.credit_limit) : 'Tanpa Batas' }}</strong></span>
-              <span>Tempo: <strong>{{ c.term_days }} Hari</strong></span>
+              <span>Tempo: <strong>{{ formatNumber(c.term_days) }} Hari</strong></span>
+              <span>Saldo Bon/Piutang: <strong :style="c.balance > 0 ? 'color:#dc2626;' : ''">Rp {{ formatNumber(c.balance || 0) }}</strong></span>
             </div>
           </div>
 
@@ -70,7 +76,7 @@
       <!-- Pagination Footer -->
       <div v-if="totalPages > 1" class="pagination-bar">
         <span class="page-info">
-          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredCustomers.length) }} dari {{ filteredCustomers.length }} data
+          Menampilkan {{ formatNumber((currentPage - 1) * pageSize + 1) }} - {{ formatNumber(Math.min(currentPage * pageSize, filteredCustomers.length)) }} dari {{ formatNumber(filteredCustomers.length) }} data
         </span>
         <div class="page-buttons">
           <button
@@ -80,7 +86,7 @@
           >
             &laquo; Sebelumnya
           </button>
-          <span class="page-num">Hal {{ currentPage }} / {{ totalPages }}</span>
+          <span class="page-num">Hal {{ formatNumber(currentPage) }} / {{ formatNumber(totalPages) }}</span>
           <button
             class="btn-page"
             :disabled="currentPage === totalPages"
@@ -280,6 +286,7 @@ import Icon from '../components/Icon.vue';
 import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
+import { formatNumber } from '../utils/format.js';
 
 const authStore = useAuthStore();
 const appStore = useAppStore();
@@ -522,10 +529,6 @@ async function saveCustomerPrice(p) {
   } catch (err) {
     appStore.showToast(err.message, 'error');
   }
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
 }
 
 let searchTimer = null;

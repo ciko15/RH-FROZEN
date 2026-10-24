@@ -52,11 +52,21 @@ export default async function handler(req, res) {
         );
       }
 
-      invoices.sort((a, b) => new Date(`${b.invoice_date} ${b.invoice_time || '00:00:00'}`) - new Date(`${a.invoice_date} ${a.invoice_time || '00:00:00'}`));
+      invoices.sort((a, b) => {
+        const dateA = a.invoice_date || a.tx_date || '';
+        const dateB = b.invoice_date || b.tx_date || '';
+        const timeA = a.invoice_time || a.tx_time || '00:00:00';
+        const timeB = b.invoice_time || b.tx_time || '00:00:00';
+        return new Date(`${dateB} ${timeB}`) - new Date(`${dateA} ${timeA}`);
+      });
 
       const total = invoices.length;
       const startIndex = (page - 1) * limit;
-      const paginated = invoices.slice(startIndex, startIndex + limit);
+      const paginated = invoices.slice(startIndex, startIndex + limit).map(invoice => ({
+        ...invoice,
+        invoice_date: invoice.invoice_date || invoice.tx_date || '',
+        invoice_time: invoice.invoice_time || invoice.tx_time || ''
+      }));
 
       return res.status(200).json({
         ok: true,

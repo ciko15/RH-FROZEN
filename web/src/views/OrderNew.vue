@@ -29,20 +29,20 @@
           <img v-if="p.image" :src="p.image" class="prod-img" alt="" loading="lazy" />
           <span v-else class="prod-emoji">{{ p.emoji || '📦' }}</span>
           <span class="prod-name">{{ p.name }}</span>
-          <span class="prod-stock" :class="{ danger: p.stock <= 0 }">Stok admin: {{ p.stock }}</span>
+          <span class="prod-stock" :class="{ danger: p.stock <= 0 }">Stok admin: {{ formatNumber(p.stock) }}</span>
           <span v-if="qtyOf(p.id) > 0" class="prod-badge">{{ qtyOf(p.id) }}</span>
         </button>
       </div>
     </div>
 
     <div class="card req-card">
-      <div class="section-title">Daftar Permintaan ({{ items.length }})</div>
+      <div class="section-title">Daftar Permintaan ({{ formatNumber(items.length) }})</div>
       <div v-if="items.length === 0" class="empty">Belum ada barang dipilih.</div>
       <div v-for="(it, idx) in items" :key="it.product_id" class="req-row" :class="{ warn: it.qty > it.stock }">
         <div class="req-info">
           <div class="req-name">{{ it.emoji }} {{ it.name }}</div>
           <small v-if="it.qty > it.stock" class="text-danger">
-            ⚠️ Stok admin kurang {{ it.qty - Math.max(it.stock, 0) }} — tetap bisa diminta
+            ⚠️ Stok admin kurang {{ formatNumber(it.qty - Math.max(it.stock, 0)) }} — tetap bisa diminta
           </small>
         </div>
         <div class="qty-ctrl">
@@ -54,7 +54,7 @@
 
       <button class="btn-submit" :disabled="loading || items.length === 0" @click="submit">
         <Icon name="check" size="18" />
-        <span>{{ loading ? 'Mengirim...' : `Kirim Permintaan (${totalQty} item)` }}</span>
+        <span>{{ loading ? 'Mengirim...' : `Kirim Permintaan (${formatNumber(totalQty)} item)` }}</span>
       </button>
     </div>
   </div>
@@ -67,6 +67,7 @@ import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
 import { cacheProducts, getCachedProducts } from '../db.js';
 import Icon from '../components/Icon.vue';
+import { formatNumber } from '../utils/format.js';
 
 const router = useRouter();
 const appStore = useAppStore();

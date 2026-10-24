@@ -87,7 +87,7 @@ export default async function handler(req, res) {
     // POST: Terima Pelunasan Piutang
     // ==========================================
     if (req.method === 'POST') {
-      requireRole(authUser, ['admin', 'manajer', 'kasir']);
+      requireRole(authUser, ['admin', 'manajer', 'kasir', 'sales']);
 
       const idempotencyKey = req.headers['idempotency-key'];
       if (idempotencyKey) {

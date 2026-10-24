@@ -6,7 +6,7 @@
           🛒 Kasir Penjualan
         </button>
         <button class="tab-btn" :class="{ active: tab === 'history' }" @click="tab = 'history'">
-          📄 Riwayat Transaksi ({{ invoices.length }})
+          📄 Riwayat Transaksi ({{ fmt(transactions.length) }})
         </button>
       </div>
     </div>
@@ -20,13 +20,15 @@
           <select v-model="selectedCustomerId" class="pos-select" @change="onCustomerChange">
             <option value="">-- Pilih Pelanggan End Customer --</option>
             <option v-for="c in customers" :key="c.id" :value="c.id">
-              {{ c.name }} ({{ c.phone || 'Tanpa No HP' }})
+              {{ c.balance > 0 ? '⚠️ [ADA PIUTANG Rp ' + fmt(c.balance) + '] ' : '' }}{{ c.name }} ({{ c.phone || 'Tanpa No HP' }})
             </option>
           </select>
         </div>
         <div v-if="selectedCustomer" class="cust-meta">
           <div><strong>Alamat:</strong> {{ selectedCustomer.address || '-' }}</div>
-          <div><strong>Piutang/Bon:</strong> Rp {{ fmt(selectedCustomer.balance) }}</div>
+          <div :style="selectedCustomer.balance > 0 ? 'color: #dc2626; font-weight: bold; font-size: 13px;' : ''">
+            <strong>Piutang/Bon:</strong> {{ selectedCustomer.balance > 0 ? '⚠️ Rp ' + fmt(selectedCustomer.balance) + ' (Ada Tagihan Belum Lunas)' : 'Rp 0 (Lunas)' }}
+          </div>
           <div><strong>Batas Kredit:</strong> {{ selectedCustomer.credit_limit > 0 ? 'Rp ' + fmt(selectedCustomer.credit_limit) : 'Tanpa Batas' }}</div>
         </div>
       </div>
@@ -56,22 +58,22 @@
           >
             <span class="stock-emoji">{{ s.emoji || '📦' }}</span>
             <span class="stock-name">{{ s.product_name }}</span>
-            <span class="stock-qty" :class="{ danger: s.stock <= 0 }">Stok: {{ s.stock }} pcs</span>
+            <span class="stock-qty" :class="{ danger: s.stock <= 0 }">Stok: {{ fmt(s.stock) }} pcs</span>
             <span class="stock-price">Rp {{ fmt(s.price) }}</span>
-            <span v-if="cartQtyOf(s.product_id) > 0" class="stock-badge">{{ cartQtyOf(s.product_id) }}</span>
+            <span v-if="cartQtyOf(s.product_id) > 0" class="stock-badge">{{ fmt(cartQtyOf(s.product_id)) }}</span>
           </button>
         </div>
       </div>
 
       <!-- Keranjang & Checkout -->
       <div class="card p-14">
-        <div class="sec-title">3. Keranjang Penjualan ({{ cart.length }})</div>
+        <div class="sec-title">3. Keranjang Penjualan ({{ fmt(cart.length) }})</div>
         <div v-if="cart.length === 0" class="empty">Keranjang kosong. Pilih barang di atas.</div>
         <div v-else class="cart-list">
           <div v-for="(it, idx) in cart" :key="it.product_id" class="cart-row">
             <div class="cart-info">
               <div class="cart-name">{{ it.emoji }} {{ it.product_name }}</div>
-              <small class="text-muted">@ Rp {{ fmt(it.price) }} · Maks stok: {{ it.maxStock }}</small>
+              <small class="text-muted">@ Rp {{ fmt(it.price) }} · Maks stok: {{ fmt(it.maxStock) }}</small>
             </div>
             <div class="cart-ctrl">
               <div class="qty-btn-group">
@@ -113,7 +115,18 @@
                 <label>Nominal Diterima</label>
                 <button type="button" class="btn-quick" @click="paidAmount = totalDue">Uang Pas</button>
               </div>
-              <input v-model.number="paidAmount" type="number" min="0" />
+              <input
+                type="text"
+                inputmode="numeric"
+                :value="formattedPaidAmount"
+                @input="onPaidAmountInput($event)"
+                placeholder="0"
+                class="currency-input"
+              />
+              <div v-if="paidAmount > totalDue" class="change-info">
+                <span>Kembalian:</span>
+                <strong>Rp {{ fmt(paidAmount - totalDue) }}</strong>
+              </div>
             </div>
             <div class="form-group">
               <label>Catatan Transaksi</label>
@@ -135,22 +148,32 @@
     <!-- TAB 2: RIWAYAT TRANSAKSI / INVOICE -->
     <div v-if="tab === 'history'" class="pos-history">
       <div v-if="loadingInvoices" class="empty">Memuat riwayat transaksi...</div>
-      <div v-else-if="invoices.length === 0" class="empty">Belum ada transaksi kasir.</div>
-      <div v-else class="inv-list">
-        <div v-for="inv in invoices" :key="inv.id" class="card inv-card" @click="viewInvoice(inv)">
-          <div class="inv-top">
-            <strong><Icon name="file-text" size="14" /> {{ inv.invoice_no }}</strong>
-            <span class="badge" :class="parseFloat(inv.remaining) <= 0 ? 'badge-lunas' : 'badge-tempo'">
-              {{ parseFloat(inv.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + fmt(inv.remaining) }}
-            </span>
+      <div v-else-if="transactions.length === 0" class="empty">Belum ada transaksi kasir.</div>
+          <div v-else class="inv-list">
+            <div
+              v-for="tx in transactions"
+              :key="tx.id + tx.type"
+              class="card inv-card"
+              :class="{ 'payment-card': tx.type === 'Pelunasan' }"
+              @click="tx.type === 'Invoice' && viewInvoice(tx)"
+            >
+              <div class="inv-top">
+                <strong><Icon :name="tx.type === 'Invoice' ? 'file-text' : 'dollar-sign'" size="14" /> {{ tx.title }}</strong>
+                <span v-if="tx.type === 'Invoice'" class="badge" :class="parseFloat(tx.remaining) <= 0 ? 'badge-lunas' : 'badge-tempo'">
+                  {{ parseFloat(tx.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + fmt(tx.remaining) }}
+                </span>
+                <span v-else class="badge badge-lunas">Pembayaran Masuk</span>
+              </div>
+              <div class="inv-cust">{{ tx.customer_name || tx.customer }}</div>
+              <div class="inv-bottom">
+                <span>{{ tx.invoice_date || tx.tx_date || tx.date }}</span>
+                <strong>{{ tx.type === 'Invoice' ? 'Rp ' + fmt(tx.total_due) : '+ Rp ' + fmt(tx.amount) }}</strong>
+              </div>
+              <small v-if="tx.type === 'Pelunasan' && tx.method" class="payment-method">
+                Metode: {{ tx.method }}
+              </small>
+            </div>
           </div>
-          <div class="inv-cust">{{ inv.customer_name }}</div>
-          <div class="inv-bottom">
-            <span>{{ inv.invoice_date || inv.tx_date }}</span>
-            <strong>Rp {{ fmt(inv.total_due) }}</strong>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- Modal Pratinjau Invoice -->
@@ -175,6 +198,7 @@ import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
 import InvoiceView from '../components/InvoiceView.vue';
+import { formatNumber } from '../utils/format.js';
 
 const authStore = useAuthStore();
 const appStore = useAppStore();
@@ -183,17 +207,43 @@ const tab = ref('pos');
 const customers = ref([]);
 const stock = ref([]);
 const invoices = ref([]);
+const payments = ref([]);
 const cart = ref([]);
 
 const selectedCustomerId = ref('');
 const search = ref('');
 const payMethod = ref('Tunai');
 const paidAmount = ref(0);
+const formattedPaidAmount = computed(() => {
+  if (paidAmount.value === 0 || !paidAmount.value) return '';
+  return formatNumber(paidAmount.value);
+});
+
+function onPaidAmountInput(e) {
+  const el = e.target;
+  const raw = el.value.replace(/\D/g, '');
+  paidAmount.value = raw ? parseInt(raw, 10) : 0;
+  // restore cursor: reformat and put cursor at end of digits
+  const formatted = paidAmount.value ? formatNumber(paidAmount.value) : '';
+  el.value = formatted;
+}
 const txNote = ref('');
 const submitting = ref(false);
 const loadingStock = ref(true);
 const loadingInvoices = ref(false);
 const activeInvoice = ref(null);
+const transactions = computed(() => [
+  ...invoices.value.map(invoice => ({
+    ...invoice,
+    type: 'Invoice',
+    title: invoice.title || `Faktur #${invoice.invoice_no}`
+  })),
+  ...payments.value.filter(payment => payment.type === 'Pelunasan')
+].sort((a, b) => {
+  const dateA = a.invoice_date || a.tx_date || a.date || '';
+  const dateB = b.invoice_date || b.tx_date || b.date || '';
+  return new Date(dateB) - new Date(dateA);
+}));
 
 const selectedCustomer = computed(() => customers.value.find(c => c.id === selectedCustomerId.value));
 
@@ -206,7 +256,7 @@ const cartTotal = computed(() => cart.value.reduce((s, it) => s + (it.qty * it.p
 const totalDue = computed(() => cartTotal.value + parseFloat(selectedCustomer.value?.balance || 0));
 
 function fmt(n) {
-  return (parseFloat(n) || 0).toLocaleString('id-ID');
+  return formatNumber(n);
 }
 
 function cartQtyOf(prodId) {
@@ -267,8 +317,12 @@ async function loadData() {
 async function loadInvoices() {
   loadingInvoices.value = true;
   try {
-    const res = await apiFetch('/api/invoices?limit=50');
-    invoices.value = res.data || [];
+    const [invoiceRes, historyRes] = await Promise.all([
+      apiFetch('/api/invoices?limit=50'),
+      apiFetch('/api/history')
+    ]);
+    invoices.value = invoiceRes.data || [];
+    payments.value = historyRes.data || [];
   } catch (e) {
     appStore.showToast(`Gagal memuat invoice: ${e.message}`, 'error');
   } finally {
@@ -289,13 +343,13 @@ async function submitTransaction() {
       body: JSON.stringify({
         customer_id: selectedCustomerId.value,
         pay_method: payMethod.value,
-        paid_amount: paidAmount.value,
-        note: txNote.value,
+        paid_amount: payMethod.value === 'Tempo' ? 0 : Math.min(Number(paidAmount.value) || 0, totalDue.value),
+        note: (txNote.value ? txNote.value + ' ' : '') + (paidAmount.value > totalDue.value ? `(Diterima Rp ${fmt(paidAmount.value)}, Kembalian Rp ${fmt(paidAmount.value - totalDue.value)})` : '').trim(),
         client_key: clientKey,
         items: cart.value.map(it => ({
           product_id: it.product_id,
-          qty: it.qty,
-          price: it.price
+          qty: Number(it.qty) || 1,
+          price: Number(it.price) || 0
         }))
       })
     });
@@ -364,11 +418,14 @@ onMounted(() => {
 .pay-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 .btn-quick { border: none; background: none; color: var(--primary, #2563eb); font-weight: 600; cursor: pointer; font-size: 12px; }
+.change-info { display: flex; justify-content: space-between; align-items: center; background: #ecfdf5; border: 1px solid #a7f3d0; color: #047857; padding: 6px 12px; border-radius: 8px; font-size: 13px; margin-top: 6px; }
 .btn-checkout { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: none; border-radius: 12px; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
 .btn-checkout:disabled { opacity: .5; cursor: not-allowed; }
 .empty { text-align: center; color: var(--text-muted, #888); padding: 24px; font-size: 13px; }
 .inv-list { display: flex; flex-direction: column; gap: 10px; }
 .inv-card { padding: 14px; cursor: pointer; }
+.inv-card.payment-card { cursor: default; }
+.payment-method { display: block; margin-top: 6px; color: var(--text-muted, #888); }
 .inv-top, .inv-bottom { display: flex; justify-content: space-between; align-items: center; }
 .inv-cust { margin: 6px 0; font-size: 14px; font-weight: 600; }
 .badge-lunas { background: rgba(16,185,129,.15); color: #059669; }

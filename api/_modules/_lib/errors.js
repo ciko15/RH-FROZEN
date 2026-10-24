@@ -15,6 +15,7 @@ export function sendError(res, status, code, message) {
 
 export function handleApiError(res, err) {
   if (err instanceof ApiError) {
+    console.warn(`[API_WARN] status=${err.status} code=${err.code}: ${err.message}`);
     return sendError(res, err.status, err.code, err.message);
   }
   console.error('[API_ERROR]', err);

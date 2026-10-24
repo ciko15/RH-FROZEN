@@ -17,7 +17,12 @@
             <Icon name="cash" size="18" class="text-primary" />
             <span class="kas-title">Kas Hari Ini</span>
           </div>
-          <span class="branch-tag">{{ user?.branch_id || 'Konsolidasi 6 Area' }}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <router-link to="/cash" class="btn-kas-detail">
+              Kelola Kas & Biaya &raquo;
+            </router-link>
+            <span class="branch-tag">{{ user?.branch_id || 'Konsolidasi 6 Area' }}</span>
+          </div>
         </div>
         <div class="kas-grid">
           <div class="kas-item">
@@ -49,7 +54,7 @@
             </div>
             <span class="badge badge-proses">{{ summary.pending_orders_count || 0 }} Antri</span>
           </div>
-          <span class="value">{{ summary.total_orders_count }} Pesanan</span>
+          <span class="value">{{ formatNumber(summary.total_orders_count) }} Pesanan</span>
           <span class="subtext">Rp {{ formatNumber(summary.total_orders_amount) }} Total Nilai</span>
         </router-link>
 
@@ -61,7 +66,7 @@
             </div>
             <span class="badge badge-dikirim">{{ summary.shipping_orders_count || 0 }} Jalan</span>
           </div>
-          <span class="value">{{ summary.total_shipped_qty }} Item</span>
+          <span class="value">{{ formatNumber(summary.total_shipped_qty) }} Item</span>
           <span class="subtext">4 Armada Driver</span>
         </router-link>
 
@@ -71,7 +76,7 @@
               <Icon name="sales" size="16" />
               <span class="label">Penjualan Selesai</span>
             </div>
-            <span class="badge badge-selesai">{{ summary.total_invoices_count }} Faktur</span>
+            <span class="badge badge-selesai">{{ formatNumber(summary.total_invoices_count) }} Faktur</span>
           </div>
           <span class="value">Rp {{ formatNumber(summary.total_sales_amount) }}</span>
           <span class="subtext">Tunai & Tempo</span>
@@ -128,12 +133,12 @@
         <div class="stat-card blue">
           <span class="label">Pesanan Anda Hari Ini</span>
           <span class="value">Rp {{ formatNumber(summary.total_orders_amount) }}</span>
-          <span class="subtext">{{ summary.total_orders_count }} Pesanan</span>
+          <span class="subtext">{{ formatNumber(summary.total_orders_count) }} Pesanan</span>
         </div>
         <div class="stat-card green">
           <span class="label">Faktur Selesai</span>
           <span class="value">Rp {{ formatNumber(summary.total_sales_amount) }}</span>
-          <span class="subtext">{{ summary.total_invoices_count }} Faktur</span>
+          <span class="subtext">{{ formatNumber(summary.total_invoices_count) }} Faktur</span>
         </div>
       </div>
     </div>
@@ -145,7 +150,7 @@
           <Icon name="targets" size="18" />
           <span class="title">Target Sales Bulan Ini</span>
         </div>
-        <span class="percent">{{ salesTarget.percent }}%</span>
+        <span class="percent">{{ formatNumber(salesTarget.percent) }}%</span>
       </div>
       <div class="progress-bar">
         <div class="progress-fill" :style="{ width: salesTarget.percent + '%' }"></div>
@@ -241,6 +246,7 @@ import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
+import { formatNumber } from '../utils/format.js';
 
 const authStore = useAuthStore();
 const appStore = useAppStore();
@@ -287,19 +293,8 @@ async function fetchDashboard() {
   }
 }
 
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
-}
-
 function formatShortVal(amount) {
-  if (!amount || amount === 0) return '0';
-  if (amount >= 1000000) {
-    return (amount / 1000000).toFixed(1).replace('.', ',') + 'jt';
-  }
-  if (amount >= 1000) {
-    return Math.round(amount / 1000) + 'rb';
-  }
-  return String(amount);
+  return formatNumber(amount);
 }
 
 function getBarHeight(amount) {
@@ -482,6 +477,19 @@ onMounted(() => {
 }
 [data-theme="dark"] .highlight-saldo .k-val {
   color: #60a5fa;
+}
+.btn-kas-detail {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(37, 99, 235, 0.08);
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-kas-detail:hover {
+  background: rgba(37, 99, 235, 0.16);
 }
 .text-success .k-val {
   color: var(--success);

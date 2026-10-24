@@ -8,6 +8,7 @@ import Orders from './views/Orders.vue';
 import OrderNew from './views/OrderNew.vue';
 import Sales from './views/Sales.vue';
 import Receivables from './views/Receivables.vue';
+import Cash from './views/Cash.vue';
 import Stock from './views/Stock.vue';
 import Customers from './views/Customers.vue';
 import Branches from './views/Branches.vue';
@@ -77,6 +78,12 @@ const routes = [
     path: '/receivables',
     name: 'Receivables',
     component: Receivables,
+    meta: { showBack: true }
+  },
+  {
+    path: '/cash',
+    name: 'Cash',
+    component: Cash,
     meta: { showBack: true }
   },
   {

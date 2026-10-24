@@ -24,11 +24,11 @@
           <span class="summary-icon">📦</span>
           <div>
             <div class="summary-title">Rekap Orderan Belum Terkirim (Total Semua Sales)</div>
-            <small class="summary-subtitle">{{ pendingSummary.length }} jenis produk · {{ totalPendingQty }} pcs harus disiapkan</small>
+            <small class="summary-subtitle">{{ formatNumber(pendingSummary.length) }} jenis produk · {{ formatNumber(totalPendingQty) }} pcs harus disiapkan</small>
           </div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          <span v-if="shortageCount > 0" class="shortage-alert-badge">⚠️ {{ shortageCount }} barang stok kurang</span>
+          <span v-if="shortageCount > 0" class="shortage-alert-badge">⚠️ {{ formatNumber(shortageCount) }} barang stok kurang</span>
           <button type="button" class="btn-toggle-summary">
             {{ showSummaryDetails ? 'Sembunyikan ▲' : 'Lihat Detail ▼' }}
           </button>
@@ -41,18 +41,18 @@
             <div class="sum-name-col">
               <strong>{{ ps.name }}</strong>
               <!-- Badge stok kurang atau cukup -->
-              <span v-if="ps.shortage > 0" class="stock-badge stock-badge--low">⚠️ Stok kurang {{ ps.shortage }} pcs</span>
+              <span v-if="ps.shortage > 0" class="stock-badge stock-badge--low">⚠️ Stok kurang {{ formatNumber(ps.shortage) }} pcs</span>
               <span v-else class="stock-badge stock-badge--ok">✅ Stok cukup</span>
             </div>
             <div class="sum-qty-col">
-              <span class="sum-prod-total">Dibutuhkan: <strong>{{ ps.total_qty }} pcs</strong></span>
-              <span class="sum-admin-stock" :class="ps.shortage > 0 ? 'stock-low' : 'stock-ok'">Stok admin: {{ ps.admin_stock }} pcs</span>
+              <span class="sum-prod-total">Dibutuhkan: <strong>{{ formatNumber(ps.total_qty) }} pcs</strong></span>
+              <span class="sum-admin-stock" :class="ps.shortage > 0 ? 'stock-low' : 'stock-ok'">Stok admin: {{ formatNumber(ps.admin_stock) }} pcs</span>
             </div>
           </div>
           <!-- Rincian per sales -->
           <div class="sum-breakdown">
             <span v-for="(sb, i) in ps.sales_breakdown" :key="i" class="breakdown-chip">
-              👤 {{ sb.sales_name }}: <strong>{{ sb.qty }} pcs</strong> ({{ sb.order_no }})
+              👤 {{ sb.sales_name }}: <strong>{{ formatNumber(sb.qty) }} pcs</strong> ({{ sb.order_no }})
             </span>
           </div>
         </div>
@@ -73,10 +73,10 @@
           <span class="badge" :class="badgeClass(o.status)">{{ o.status }}</span>
         </div>
         <div class="order-sales">👤 {{ o.sales_name }}</div>
-        <div v-if="o.shortage_total > 0" class="shortage">⚠️ Stok admin kurang {{ o.shortage_total }} pcs ({{ o.shortage_items }} barang)</div>
+        <div v-if="o.shortage_total > 0" class="shortage">⚠️ Stok admin kurang {{ formatNumber(o.shortage_total) }} pcs ({{ formatNumber(o.shortage_items) }} barang)</div>
         <div class="order-bottom">
           <span>{{ o.order_date }} {{ o.order_time }}</span>
-          <strong>{{ o.total_qty }} pcs · {{ o.items_count }} barang</strong>
+          <strong>{{ formatNumber(o.total_qty) }} pcs · {{ formatNumber(o.items_count) }} barang</strong>
         </div>
       </div>
     </div>
@@ -100,11 +100,11 @@
           <div v-for="it in selected.items" :key="it.id" class="item-row">
             <div>
               <div class="item-name">{{ it.product_name || it.name }}</div>
-              <small v-if="it.shortage > 0" class="text-danger">⚠️ Stok admin kurang {{ it.shortage }}</small>
+              <small v-if="it.shortage > 0" class="text-danger">⚠️ Stok admin kurang {{ formatNumber(it.shortage) }}</small>
             </div>
-            <strong>{{ it.qty }} pcs</strong>
+            <strong>{{ formatNumber(it.qty) }} pcs</strong>
           </div>
-          <div class="info-row total"><span>Total</span><strong>{{ selected.total_qty }} pcs</strong></div>
+          <div class="info-row total"><span>Total</span><strong>{{ formatNumber(selected.total_qty) }} pcs</strong></div>
 
           <div class="action-buttons">
             <button v-if="canShip" class="btn-action btn-ship" :disabled="actionLoading" @click="handleShip">
@@ -129,6 +129,7 @@ import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
+import { formatNumber } from '../utils/format.js';
 
 const authStore = useAuthStore();
 const appStore = useAppStore();

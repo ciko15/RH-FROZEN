@@ -111,7 +111,7 @@
                 class="stock-badge"
                 :class="p.is_low_stock ? 'badge-low' : 'badge-safe'"
               >
-                {{ p.stock }}
+                {{ formatNumber(p.stock) }}
               </span>
             </div>
             <div class="stock-actions-btn" v-if="canManageStock">
@@ -137,7 +137,7 @@
       <!-- Pagination Stok -->
       <div v-if="stockTotalPages > 1" class="pagination-bar">
         <span class="page-info">
-          Menampilkan {{ (stockCurrentPage - 1) * stockPageSize + 1 }} - {{ Math.min(stockCurrentPage * stockPageSize, filteredProducts.length) }} dari {{ filteredProducts.length }} barang
+          Menampilkan {{ formatNumber((stockCurrentPage - 1) * stockPageSize + 1) }} - {{ formatNumber(Math.min(stockCurrentPage * stockPageSize, filteredProducts.length)) }} dari {{ formatNumber(filteredProducts.length) }} barang
         </span>
         <div class="page-buttons">
           <button
@@ -250,7 +250,7 @@
         <div class="sheet-body">
           <div class="cur-stock-box">
             <span>Stok Sistem Saat Ini:</span>
-            <strong>{{ adjustProduct.stock }}</strong>
+            <strong>{{ formatNumber(adjustProduct.stock) }}</strong>
           </div>
 
           <div class="form-group">
@@ -385,6 +385,7 @@ import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
+import { formatNumber } from '../utils/format.js';
 
 const authStore = useAuthStore();
 const appStore = useAppStore();
@@ -725,10 +726,6 @@ function onImgError(product) {
   if (product) {
     product.image = '';
   }
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
 }
 
 onMounted(() => {

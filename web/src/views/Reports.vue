@@ -40,7 +40,7 @@
 
       <div class="stat-card blue">
         <span class="label">Order Masuk</span>
-        <span class="val">{{ summary.total_orders }} Order</span>
+        <span class="val">{{ formatNumber(summary.total_orders) }} Order</span>
         <span class="sub">Periode Ini</span>
       </div>
 
@@ -91,7 +91,7 @@
       <div class="comm-grid">
         <div class="comm-row">
           <span>Tarif Komisi Usaha:</span>
-          <strong>{{ commission.percent }}%</strong>
+          <strong>{{ formatNumber(commission.percent) }}%</strong>
         </div>
         <div class="comm-row">
           <span>Penjualan Faktur Lunas:</span>
@@ -122,6 +122,7 @@ import { ref, onMounted } from 'vue';
 import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
+import { formatNumber } from '../utils/format.js';
 
 const appStore = useAppStore();
 
@@ -186,10 +187,6 @@ function exportCsv() {
   link.click();
   document.body.removeChild(link);
   appStore.showToast('File CSV berhasil diunduh', 'success');
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
 }
 
 onMounted(() => {

@@ -14,7 +14,7 @@
       >
         <div class="it-head">
           <span class="it-name">{{ p.emoji || '📦' }} {{ p.name }}</span>
-          <span class="it-sys">Stok Sistem: <strong>{{ p.stock }}</strong></span>
+          <span class="it-sys">Stok Sistem: <strong>{{ formatNumber(p.stock) }}</strong></span>
         </div>
 
         <div class="it-body">
@@ -63,6 +63,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
+import { formatNumber } from '../utils/format.js';
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -93,8 +94,8 @@ function getDiff(p) {
 
 function getDiffLabel(p) {
   const diff = getDiff(p);
-  if (diff === 0) return 'Sesuai (0)';
-  return diff > 0 ? `Lebih (+${diff})` : `Kurang (${diff})`;
+  if (diff === 0) return `Sesuai (${formatNumber(diff)})`;
+  return diff > 0 ? `Lebih (+${formatNumber(diff)})` : `Kurang (${formatNumber(diff)})`;
 }
 
 function getDiffClass(p) {

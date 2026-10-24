@@ -72,7 +72,7 @@
           <!-- Rincian Item Pembelian -->
           <div class="items-section">
             <div class="items-head">
-              <strong>Daftar Barang Masuk ({{ form.items.length }})</strong>
+              <strong>Daftar Barang Masuk ({{ formatNumber(form.items.length) }})</strong>
               <button type="button" class="btn-pick" @click="addItemRow">
                 <Icon name="plus" size="14" />
                 Item
@@ -87,7 +87,7 @@
               <select v-model="it.product_id" class="p-select" required>
                 <option value="">-- Pilih Barang --</option>
                 <option v-for="prod in products" :key="prod.id" :value="prod.id">
-                  {{ prod.name }} (Stok: {{ prod.stock }})
+                  {{ prod.name }} (Stok: {{ formatNumber(prod.stock) }})
                 </option>
               </select>
 
@@ -126,6 +126,7 @@ import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
+import { formatNumber } from '../utils/format.js';
 
 const authStore = useAuthStore();
 const appStore = useAppStore();
@@ -220,10 +221,6 @@ async function submitPurchase() {
   } finally {
     submitLoading.value = false;
   }
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
 }
 
 onMounted(() => {

@@ -2,6 +2,8 @@ import { authenticate } from './_lib/auth.js';
 import { getTabsBatch } from './_lib/sheets.js';
 import { handleApiError } from './_lib/errors.js';
 
+const getInvoiceDate = invoice => invoice.invoice_date || invoice.tx_date || '';
+
 export default async function handler(req, res) {
   try {
     const authUser = await authenticate(req);
@@ -39,7 +41,7 @@ export default async function handler(req, res) {
       invoices = invoices.filter(inv => inv.sales_id === authUser.id);
     }
 
-    const todayInvoices = invoices.filter(inv => inv.invoice_date === todayStr);
+    const todayInvoices = invoices.filter(inv => getInvoiceDate(inv) === todayStr);
     const totalSalesAmount = todayInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal) || 0), 0);
 
     // 3. Total Barang Dikirim Hari Ini (Orders Dikirim / Selesai)
@@ -49,16 +51,33 @@ export default async function handler(req, res) {
 
     // 4. Kas Hari Ini (Pemasukan, Pengeluaran, Saldo Awal, Saldo Akhir)
     let payments = tabs.Payments || [];
+    // Filter payments untuk sales: hanya pembayaran dari invoice miliknya
+    if (authUser.role === 'sales') {
+      const myInvoiceIds = new Set(invoices.map(inv => inv.id));
+      payments = payments.filter(p => myInvoiceIds.has(p.invoice_id) || p.created_by === authUser.id);
+    } else if (!isGlobal && branchId) {
+      // Manajer/kasir: filter berdasarkan cabang via customer
+      const branchInvoiceIds = new Set(invoices.map(inv => inv.id));
+      payments = payments.filter(p => branchInvoiceIds.has(p.invoice_id));
+    }
     const todayPayments = payments.filter(p => p.payment_date === todayStr);
-    const pemasukanHariIni = todayPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const pemasukanHariIni = todayPayments
+      .filter(p => p.type !== 'Pengeluaran')
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const pengeluaranHariIni = todayPayments
+      .filter(p => p.type === 'Pengeluaran')
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
     
     // Total pembayaran sebelum hari ini untuk menghitung saldo berjalan
     const pastPayments = payments.filter(p => p.payment_date < todayStr);
-    const totalPemasukanLalu = pastPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const totalPemasukanLalu = pastPayments
+      .filter(p => p.type !== 'Pengeluaran')
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const totalPengeluaranLalu = pastPayments
+      .filter(p => p.type === 'Pengeluaran')
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
     
-    // Pengeluaran operasional (default 0 atau jika ada tab pengeluaran)
-    const pengeluaranHariIni = 0; 
-    const saldoAwal = totalPemasukanLalu;
+    const saldoAwal = totalPemasukanLalu - totalPengeluaranLalu;
     const saldoAkhir = saldoAwal + pemasukanHariIni - pengeluaranHariIni;
 
     // 5. Pengiriman Hari Ini (Status Dikirim & Selesai)
@@ -71,7 +90,7 @@ export default async function handler(req, res) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const dStr = d.toISOString().substring(0, 10);
-      const dayInvoices = invoices.filter(inv => inv.invoice_date === dStr);
+      const dayInvoices = invoices.filter(inv => getInvoiceDate(inv) === dStr);
       const amount = dayInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal) || 0), 0);
       
       const parts = dStr.split('-');
@@ -88,7 +107,7 @@ export default async function handler(req, res) {
       const targetAmount = myTarget ? parseFloat(myTarget.target) || 0 : 0;
 
       // Realisasi penjualan sales bulan ini
-      const monthInvoices = invoices.filter(inv => inv.invoice_date.startsWith(curMonth));
+      const monthInvoices = invoices.filter(inv => getInvoiceDate(inv).startsWith(curMonth));
       const achievedAmount = monthInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal) || 0), 0);
       const percent = targetAmount > 0 ? Math.min(Math.round((achievedAmount / targetAmount) * 100), 100) : 0;
 

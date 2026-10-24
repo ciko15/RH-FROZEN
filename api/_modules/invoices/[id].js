@@ -12,7 +12,7 @@ export default async function handler(req, res) {
       throw new ApiError(400, 'BAD_REQUEST', 'ID Invoice wajib disertakan');
     }
 
-    const tabs = await getTabsBatch(['Invoices', 'OrderItems', 'Config', 'Branches', 'Users', 'Customers', 'Returns', 'ReturnItems']);
+    const tabs = await getTabsBatch(['Invoices', 'InvoiceItems', 'OrderItems', 'Config', 'Branches', 'Users', 'Customers', 'Returns', 'ReturnItems']);
     const invoices = tabs.Invoices || [];
     const invoice = invoices.find(inv => inv.id === invoiceId);
 
@@ -28,7 +28,10 @@ export default async function handler(req, res) {
       throw new ApiError(403, 'FORBIDDEN', 'Anda hanya dapat melihat invoice milik Anda sendiri');
     }
 
-    const orderItems = (tabs.OrderItems || []).filter(oi => oi.order_id === invoice.order_id);
+    const invoiceItems = (tabs.InvoiceItems || []).filter(item => item.invoice_id === invoice.id);
+    const items = invoiceItems.length
+      ? invoiceItems
+      : (tabs.OrderItems || []).filter(item => item.order_id === invoice.order_id);
     const configs = tabs.Config || [];
     const getCfg = k => (configs.find(c => c.key === k)?.value) || '';
 
@@ -60,6 +63,8 @@ export default async function handler(req, res) {
 
     const fullInvoice = {
       ...invoice,
+      invoice_date: invoice.invoice_date || invoice.tx_date || '',
+      invoice_time: invoice.invoice_time || invoice.tx_time || '',
       customer_phone: customer ? customer.phone : '',
       customer_address: customer ? customer.address : (invoice.customer_address || ''),
       returns: enrichedReturns,
@@ -74,7 +79,7 @@ export default async function handler(req, res) {
       },
       branch_paper_width: branch ? branch.paper_width : 58,
       sales_name: sales ? sales.full_name : '-',
-      items: orderItems.map(it => ({
+      items: items.map(it => ({
         ...it,
         line_total: (parseInt(it.qty, 10) * parseFloat(it.price)) - parseFloat(it.discount || 0)
       }))

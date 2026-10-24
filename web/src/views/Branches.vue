@@ -64,7 +64,7 @@
           <div class="branch-card-body">
             <div class="info-row">
               <span class="info-label"><Icon name="printer" size="13" /> Printer Struk</span>
-              <span class="info-val">{{ b.paper_width || 58 }} mm {{ Number(b.paper_width) === 80 ? '(Desktop POS)' : '(Mobile)' }}</span>
+              <span class="info-val">{{ formatNumber(b.paper_width || 58) }} mm {{ Number(b.paper_width) === 80 ? '(Desktop POS)' : '(Mobile)' }}</span>
             </div>
           </div>
 
@@ -84,7 +84,7 @@
       <!-- Pagination Cabang (10 data per halaman) -->
       <div v-if="totalPages > 1" class="pagination-bar">
         <span class="page-info">
-          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredBranches.length) }} dari {{ filteredBranches.length }} cabang
+          Menampilkan {{ formatNumber((currentPage - 1) * pageSize + 1) }} - {{ formatNumber(Math.min(currentPage * pageSize, filteredBranches.length)) }} dari {{ formatNumber(filteredBranches.length) }} cabang
         </span>
         <div class="page-buttons">
           <button
@@ -94,7 +94,7 @@
           >
             &laquo; Sebelumnya
           </button>
-          <span class="page-num">Hal {{ currentPage }} / {{ totalPages }}</span>
+          <span class="page-num">Hal {{ formatNumber(currentPage) }} / {{ formatNumber(totalPages) }}</span>
           <button
             class="btn-page"
             :disabled="currentPage === totalPages"
@@ -165,6 +165,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import Icon from '../components/Icon.vue';
 import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
+import { formatNumber } from '../utils/format.js';
 
 const appStore = useAppStore();
 

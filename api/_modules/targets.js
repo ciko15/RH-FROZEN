@@ -47,11 +47,10 @@ export default async function handler(req, res) {
         const branchObj = branches.find(b => b.id === u.branch_id);
 
         // Hitung realisasi penjualan faktur lunas bulan ini
-        const salesInvoices = invoices.filter(inv => 
-          inv.sales_id === u.id && 
-          inv.invoice_date && 
-          inv.invoice_date.startsWith(month)
-        );
+        const salesInvoices = invoices.filter(inv => {
+          const invoiceDate = inv.invoice_date || inv.tx_date || '';
+          return inv.sales_id === u.id && invoiceDate.startsWith(month);
+        });
         const totalSales = salesInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal) || 0), 0);
         const paidSales = salesInvoices
           .filter(inv => parseFloat(inv.remaining || 0) <= 0)

@@ -57,13 +57,13 @@
             <div>{{ it.name }}</div>
             <small v-if="it.discount > 0" class="disc-label">Diskon: {{ formatRp(it.discount) }}</small>
           </td>
-          <td class="text-right">{{ it.qty }}</td>
+          <td class="text-right">{{ formatNumber(it.qty) }}</td>
           <td class="text-right">{{ formatRp(it.price) }}</td>
           <td class="text-right">{{ formatRp(it.line_total) }}</td>
         </tr>
         <tr class="total-belanja-row">
           <td class="font-bold">Total belanja</td>
-          <td class="text-right font-bold">{{ invoice.total_qty }}</td>
+          <td class="text-right font-bold">{{ formatNumber(invoice.total_qty) }}</td>
           <td></td>
           <td class="text-right font-bold">{{ formatRp(invoice.subtotal) }}</td>
         </tr>
@@ -90,7 +90,7 @@
           <span>- {{ formatRp(invoice.total_returned_amount) }}</span>
         </div>
         <div v-for="ret in invoice.returns" :key="ret.id" class="ret-mini-detail">
-          <small>• Nota {{ ret.return_no }}: {{ ret.items?.map(i => `${i.name} (${i.qty}x)`).join(', ') }}</small>
+          <small>• Nota {{ ret.return_no }}: {{ ret.items?.map(i => `${i.name} (${formatNumber(i.qty)}x)`).join(', ') }}</small>
         </div>
         <div class="sum-row adj-due-row">
           <span class="sum-lbl">Tagihan Setelah Retur:</span>
@@ -152,6 +152,7 @@ import { useRouter } from 'vue-router';
 import html2canvas from 'html2canvas';
 import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
+import { formatNumber } from '../utils/format.js';
 
 const props = defineProps({
   invoice: {
@@ -181,8 +182,7 @@ const printClass = computed(() => {
 
 // Format uang tanpa spasi sesuai contoh gambar "Rp5.000"
 function formatRp(num) {
-  const n = Math.round(parseFloat(num || 0));
-  return 'Rp' + n.toLocaleString('id-ID');
+  return 'Rp' + formatNumber(Math.round(parseFloat(num || 0)));
 }
 
 function handlePrint() {

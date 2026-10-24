@@ -76,6 +76,10 @@ export default async function handler(req, res) {
       const { default: h } = await import('./_modules/audit.js');
       return await h(req, res);
     }
+    if (pathname === '/api/cash') {
+      const { default: h } = await import('./_modules/cash/index.js');
+      return await h(req, res);
+    }
 
     // 3. Orders
     if (pathname === '/api/orders/options') {

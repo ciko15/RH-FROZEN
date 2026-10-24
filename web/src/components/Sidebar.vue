@@ -40,6 +40,10 @@
 
       <div class="nav-section-title">Keuangan & Analitik</div>
       <nav class="sidebar-nav">
+        <router-link to="/cash" class="sidebar-link" active-class="active">
+          <div class="icon-box"><Icon name="cash" size="18" class="nav-svg" /></div>
+          <span class="label">Buku Kas & Biaya</span>
+        </router-link>
         <router-link to="/receivables" class="sidebar-link" active-class="active">
           <div class="icon-box"><Icon name="receivables" size="18" class="nav-svg" /></div>
           <span class="label">Piutang Pelanggan</span>

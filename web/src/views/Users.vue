@@ -69,7 +69,7 @@
       <!-- Pagination Pengguna (10 data per halaman) -->
       <div v-if="totalPages > 1" class="pagination-bar">
         <span class="page-info">
-          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredUsers.length) }} dari {{ filteredUsers.length }} user
+          Menampilkan {{ formatNumber((currentPage - 1) * pageSize + 1) }} - {{ formatNumber(Math.min(currentPage * pageSize, filteredUsers.length)) }} dari {{ formatNumber(filteredUsers.length) }} user
         </span>
         <div class="page-buttons">
           <button
@@ -79,7 +79,7 @@
           >
             &laquo; Sebelumnya
           </button>
-          <span class="page-num">Hal {{ currentPage }} / {{ totalPages }}</span>
+          <span class="page-num">Hal {{ formatNumber(currentPage) }} / {{ formatNumber(totalPages) }}</span>
           <button
             class="btn-page"
             :disabled="currentPage === totalPages"
@@ -193,6 +193,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
+import { formatNumber } from '../utils/format.js';
 
 const appStore = useAppStore();
 

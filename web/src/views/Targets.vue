@@ -43,7 +43,7 @@
               </div>
             </div>
             <span class="percent-badge" :class="s.percent >= 100 ? 'badge-dikirim' : 'badge-proses'">
-              {{ s.percent }}%
+              {{ formatNumber(s.percent) }}%
             </span>
           </div>
 
@@ -84,7 +84,7 @@
       <!-- Pagination Target Sales (10 data per halaman) -->
       <div v-if="totalPages > 1" class="pagination-bar">
         <span class="page-info">
-          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredSales.length) }} dari {{ filteredSales.length }} sales
+          Menampilkan {{ formatNumber((currentPage - 1) * pageSize + 1) }} - {{ formatNumber(Math.min(currentPage * pageSize, filteredSales.length)) }} dari {{ formatNumber(filteredSales.length) }} sales
         </span>
         <div class="page-buttons">
           <button
@@ -94,7 +94,7 @@
           >
             &laquo; Sebelumnya
           </button>
-          <span class="page-num">Hal {{ currentPage }} / {{ totalPages }}</span>
+          <span class="page-num">Hal {{ formatNumber(currentPage) }} / {{ formatNumber(totalPages) }}</span>
           <button
             class="btn-page"
             :disabled="currentPage === totalPages"
@@ -148,6 +148,7 @@ import { ref, computed, onMounted } from 'vue';
 import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
+import { formatNumber } from '../utils/format.js';
 
 const authStore = useAuthStore();
 const appStore = useAppStore();
@@ -256,10 +257,6 @@ async function submitSetTarget() {
   }).finally(() => {
     appStore.finishSync();
   });
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
 }
 
 onMounted(() => {

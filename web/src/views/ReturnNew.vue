@@ -33,7 +33,7 @@
 
           <label :for="'check-' + it.product_id" class="it-info">
             <span class="it-name">{{ it.name }}</span>
-            <small class="it-meta">Terjual: <strong>{{ it.sold_qty }}</strong> | Harga: Rp {{ formatNumber(it.net_unit_price) }}</small>
+            <small class="it-meta">Terjual: <strong>{{ formatNumber(it.sold_qty) }}</strong> | Harga: Rp {{ formatNumber(it.net_unit_price) }}</small>
             <small class="it-rem">Maksimal retur: <strong>{{ it.max_returnable }}</strong></small>
           </label>
 
@@ -123,6 +123,7 @@ import InvoiceView from '../components/InvoiceView.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
+import { formatNumber } from '../utils/format.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -304,10 +305,6 @@ function printReceipt() {
   if (typeof window !== 'undefined') {
     window.print();
   }
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
 }
 
 onMounted(() => {

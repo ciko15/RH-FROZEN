@@ -3,7 +3,7 @@
     <div class="returns-header">
       <div class="tabs">
         <button class="tab-btn" :class="{ active: tab === 'list' }" @click="tab = 'list'">
-          📋 Daftar Retur ({{ returns.length }})
+          📋 Daftar Retur ({{ formatNumber(returns.length) }})
         </button>
         <button v-if="isSales" class="tab-btn" :class="{ active: tab === 'create' }" @click="tab = 'create'">
           ➕ Ajukan Retur Baru
@@ -43,7 +43,7 @@
           <div class="ret-reason">Alasan: "{{ r.reason || '-' }}"</div>
           <div class="ret-bottom">
             <span>{{ r.date }}</span>
-            <strong>{{ r.total_qty }} pcs barang</strong>
+            <strong>{{ formatNumber(r.total_qty) }} pcs barang</strong>
           </div>
         </div>
       </div>
@@ -68,7 +68,7 @@
           <div v-for="it in invoiceItems" :key="it.product_id" class="ret-item-row">
             <div class="it-name-col">
               <strong>{{ it.name }}</strong>
-              <small class="text-muted">Dibeli: {{ it.qty }} pcs</small>
+              <small class="text-muted">Dibeli: {{ formatNumber(it.qty) }} pcs</small>
             </div>
             <div class="qty-stepper">
               <button type="button" @click="decRetQty(it)">−</button>
@@ -118,10 +118,10 @@
           <h4 style="margin: 14px 0 6px;">Barang yang Diretur</h4>
           <div v-for="it in selectedReturn.items" :key="it.id || it.product_id" class="info-row" style="border-bottom: 1px dashed var(--border, #eee); padding: 6px 0;">
             <span>{{ it.name }}</span>
-            <strong>{{ it.qty }} pcs</strong>
+            <strong>{{ formatNumber(it.qty) }} pcs</strong>
           </div>
           <div class="info-row total" style="margin-top: 8px;">
-            <span>Total Barang</span><strong>{{ selectedReturn.total_qty }} pcs</strong>
+            <span>Total Barang</span><strong>{{ formatNumber(selectedReturn.total_qty) }} pcs</strong>
           </div>
 
           <!-- Aksi Admin: Setujui / Tolak -->
@@ -150,6 +150,7 @@ import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
+import { formatNumber } from '../utils/format.js';
 
 const authStore = useAuthStore();
 const appStore = useAppStore();

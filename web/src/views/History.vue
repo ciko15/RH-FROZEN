@@ -38,6 +38,8 @@
           v-for="item in paginatedItems"
           :key="item.id + item.type"
           class="card history-card"
+          :class="{ 'clickable-card': item.type === 'Invoice' }"
+          @click="item.type === 'Invoice' && viewInvoice(item)"
         >
           <div class="h-top">
             <span class="h-title">{{ item.title }}</span>
@@ -63,7 +65,7 @@
       <!-- Pagination Riwayat Transaksi -->
       <div v-if="totalPages > 1" class="pagination-bar">
         <span class="page-info">
-          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredItems.length) }} dari {{ filteredItems.length }} transaksi
+          Menampilkan {{ formatNumber((currentPage - 1) * pageSize + 1) }} - {{ formatNumber(Math.min(currentPage * pageSize, filteredItems.length)) }} dari {{ formatNumber(filteredItems.length) }} transaksi
         </span>
         <div class="page-buttons">
           <button
@@ -73,7 +75,7 @@
           >
             &laquo; Sebelumnya
           </button>
-          <span class="page-num">Hal {{ currentPage }} / {{ totalPages }}</span>
+          <span class="page-num">Hal {{ formatNumber(currentPage) }} / {{ formatNumber(totalPages) }}</span>
           <button
             class="btn-page"
             :disabled="currentPage === totalPages"
@@ -84,21 +86,36 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Pratinjau Invoice -->
+    <div v-if="activeInvoice" class="sheet-overlay" @click.self="activeInvoice = null">
+      <div class="sheet-content">
+        <div class="sheet-header">
+          <h3>Invoice {{ activeInvoice.invoice_no }}</h3>
+          <button class="sheet-close" @click="activeInvoice = null"><Icon name="x" size="18" /></button>
+        </div>
+        <div class="sheet-body">
+          <InvoiceView :invoice="activeInvoice" />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import Icon from '../components/Icon.vue';
+import InvoiceView from '../components/InvoiceView.vue';
 import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
+import { formatNumber } from '../utils/format.js';
 
 const appStore = useAppStore();
 const loading = ref(false);
 const items = ref([]);
 const searchQuery = ref('');
 
-const typeTabs = ['Semua', 'Invoice', 'Retur', 'Order'];
+const typeTabs = ['Semua', 'Invoice', 'Retur', 'Pelunasan', 'Order'];
 const selectedType = ref('Semua');
 
 // Pagination (10 data per halaman)
@@ -144,11 +161,19 @@ async function fetchHistory() {
 function getTypeBadge(type) {
   if (type === 'Invoice') return 'badge-dikirim';
   if (type === 'Retur') return 'badge-dibatalkan';
+  if (type === 'Pelunasan') return 'badge-lunas';
   return 'badge-proses';
 }
 
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
+const activeInvoice = ref(null);
+
+async function viewInvoice(inv) {
+  try {
+    const res = await apiFetch(`/api/invoices/${inv.id}`);
+    activeInvoice.value = res.data;
+  } catch (e) {
+    appStore.showToast(e.message || 'Gagal memuat rincian invoice', 'error');
+  }
 }
 
 onMounted(() => {
@@ -328,5 +353,41 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-main);
+}
+.clickable-card {
+  cursor: pointer;
+}
+.clickable-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+}
+.sheet-content {
+  background: var(--bg-card, #fff);
+  width: 100%;
+  max-width: 560px;
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: 18px 18px 0 0;
+  padding: 18px;
+}
+.sheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.sheet-close {
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 </style>

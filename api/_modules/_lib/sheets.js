@@ -103,19 +103,122 @@ async function fetchTabRowsFromGoogle(tabName) {
         if (!header) continue;
         const cell = rowCells[c];
         let val = '';
-        if (cell && cell.v !== undefined && cell.v !== null) {
-          val = cell.v;
+        if (cell) {
+          if (typeof cell.v === 'string' && cell.v.startsWith('Date(') && cell.f) {
+            val = cell.f;
+          } else if (cell.v !== undefined && cell.v !== null) {
+            val = cell.v;
+          } else if (cell.f !== undefined && cell.f !== null) {
+            val = cell.f;
+          }
         }
         item[header] = desanitizeText(val);
       }
       rows.push(item);
     }
-    return rows;
+
+    // Normalisasi field yang bergeser akibat kolom tanpa header di Google Sheet
+    return normalizeTabRows(tabName, rows);
   } catch (err) {
     console.error(`[LIVE SHEETS ERROR] Gagal membaca tab ${tabName} dari Google Spreadsheet:`, err.message);
     return null;
   }
 }
+
+/**
+ * Normalisasi field yang bergeser pada tab tertentu karena kolom tersembunyi/tanpa header di gviz
+ */
+function normalizeTabRows(tabName, rows) {
+  if (!rows || rows.length === 0) return rows;
+
+  if (tabName === 'Invoices') {
+    // Setiap baris bisa berbeda (baris lama geser karena kolom order_id tak bernama, baris baru normal)
+    // Deteksi per baris: jika tx_date bukan format tanggal YYYY-MM-DD
+    return rows.map(inv => {
+      const txDateVal = String(inv.tx_date || '').trim();
+      const isShifted = txDateVal && !txDateVal.match(/^\d{4}-\d{2}-\d{2}$/);
+
+      if (isShifted) {
+        // Kolom bergeser 1: tx_date sebenarnya berisi order_id, tx_time berisi invoice_date, dst.
+        return {
+          ...inv,
+          order_id: inv.tx_date || '',
+          invoice_date: inv.tx_time || '',
+          invoice_time: inv.due_date || '',
+          due_date: inv.customer_id || '',
+          customer_id: inv.customer_name || '',
+          customer_name: inv.customer_address || '',
+          customer_address: inv.branch_id || '',
+          branch_id: inv.sales_id || '',
+          sales_id: inv.total_qty || '',
+          total_qty: inv.subtotal || '',
+          subtotal: inv.discount_total || '',
+          discount_total: inv.previous_balance || '',
+          previous_balance: inv.total_due || '',
+          total_due: inv.paid_amount || '',
+          paid_amount: inv.remaining || '',
+          remaining: inv.pay_method || '',
+          pay_method: inv.note || '',
+          note: inv.approved_by || '',
+          approved_by: inv.created_by || '',
+          created_by: inv['created_by_1'] || inv['created_by '] || '',
+        };
+      } else {
+        // Baris normal (sudah sesuai skema kolom)
+        return {
+          ...inv,
+          invoice_date: inv.tx_date || inv.invoice_date || '',
+          invoice_time: inv.tx_time || inv.invoice_time || '',
+        };
+      }
+    });
+  }
+
+  if (tabName === 'Returns') {
+    // Returns sheet: type=invoice_id, ref_id=customer_id, sales_id=date(geser), branch_id=sales_id(geser),
+    // date=total/amount, reason=user_id
+    // Deteksi: jika 'sales_id' berisi value tanggal (bukan user ID)
+    const sample = rows[0];
+    const salesIdVal = String(sample.sales_id || '');
+    const isShifted = salesIdVal && salesIdVal.match(/^\d{4}-\d{2}-\d{2}$/);
+
+    if (isShifted) {
+      return rows.map(r => ({
+        ...r,
+        invoice_id: r.type || '',       // type kolom berisi invoice_id
+        customer_id: r.ref_id || '',    // ref_id kolom berisi customer_id
+        invoice_date: r.sales_id || '', // sales_id kolom berisi tanggal retur
+        sales_id: r.branch_id || '',    // branch_id kolom berisi sales_id
+        total: r.date || 0,             // date kolom berisi amount/total retur
+        user_id: r.reason || '',        // reason kolom berisi user_id
+        date: r.sales_id || '',         // tanggal retur sebenarnya di kolom sales_id
+        reason: r.status || '',         // status kolom berisi reason/alasan
+      }));
+    }
+  }
+
+  if (tabName === 'Customers') {
+    // Deteksi jika baris Customers bergeser (misal: sales_id terlewat sehingga credit_limit masuk ke sales_id)
+    return rows.map(c => {
+      const salesId = String(c.sales_id || '').trim();
+      const isShifted = salesId && !salesId.startsWith('USR-') && !isNaN(salesId);
+      if (isShifted) {
+        // Kolom sales_id berisi credit_limit (misal: 14994500), balance berisi term_days (misal: 14)
+        return {
+          ...c,
+          sales_id: 'USR-SLS-BANJAR',
+          balance: 0,
+          credit_limit: parseFloat(c.sales_id) || 0,
+          term_days: parseInt(c.balance, 10) || 14
+        };
+      }
+      return c;
+    });
+  }
+
+  return rows;
+}
+
 
 /**
  * Membaca tab menjadi list of objects berdasarkan baris header
@@ -1919,8 +2022,8 @@ export async function getTabRows(tabName, forceFresh = false) {
 /**
  * Membaca banyak tab sekaligus dengan values.batchGet
  */
-// Tab-tab transaksional yang hanya bisa dibaca via GAS (bukan gviz/tq publik)
-const GAS_ONLY_TABS = ['Orders', 'OrderItems', 'SalesStock', 'Returns', 'AuditLog', 'Invoices', 'Purchases', 'SalesTx'];
+// Tab-tab transaksional yang hanya ada di GAS (AuditLog)
+const GAS_ONLY_TABS = ['AuditLog'];
 
 export async function getTabsBatch(tabNames) {
   const result = {};
@@ -1939,13 +2042,12 @@ export async function getTabsBatch(tabNames) {
 
   // Jika Google Service Account belum dikonfigurasi, gunakan fallback aman lokal
   if (!SA_EMAIL || !SA_KEY) {
-    for (const tab of missingTabs) {
-      // Tab transaksional harus dibaca via GAS (private, tidak bisa gviz/tq)
+    await Promise.all(missingTabs.map(async (tab) => {
       if (GAS_ONLY_TABS.includes(tab)) {
         try {
           const gasResult = await callGas('getTabData', { tabName: tab });
           const rows = Array.isArray(gasResult) ? gasResult : [];
-          setCached(tab, rows, 10); // cache pendek 10 detik agar data fresh
+          setCached(tab, rows, 60);
           result[tab] = rows;
         } catch (e) {
           console.error(`[GAS READ ERROR] Tab ${tab}:`, e.message);
@@ -1954,7 +2056,7 @@ export async function getTabsBatch(tabNames) {
       } else {
         result[tab] = await getTabRows(tab);
       }
-    }
+    }));
     return result;
   }
 

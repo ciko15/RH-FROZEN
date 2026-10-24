@@ -4,7 +4,7 @@
     <div class="total-card card">
       <span class="label">Total Piutang Berjalan</span>
       <span class="amount">Rp {{ formatNumber(totalReceivables) }}</span>
-      <span class="subtext">{{ debtors.length }} Pelanggan memiliki saldo piutang</span>
+      <span class="subtext">{{ formatNumber(debtors.length) }} Pelanggan memiliki saldo piutang</span>
     </div>
 
     <!-- Bar Pencarian & Judul -->
@@ -42,7 +42,7 @@
               <span class="cust-branch" v-if="d.branch_id">{{ d.branch_id }}</span>
             </div>
             <span class="badge" :class="d.has_overdue ? 'badge-dibatalkan' : 'badge-menunggu'">
-              {{ d.has_overdue ? `Menunggak ${d.overdue_days} hari` : 'Aktif' }}
+              {{ d.has_overdue ? `Menunggak ${formatNumber(d.overdue_days)} hari` : 'Aktif' }}
             </span>
           </div>
 
@@ -75,7 +75,7 @@
       <!-- Pagination (10 data per halaman) -->
       <div v-if="totalPages > 1" class="pagination-bar">
         <span class="page-info">
-          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredDebtors.length) }} dari {{ filteredDebtors.length }} pelanggan
+          Menampilkan {{ formatNumber((currentPage - 1) * pageSize + 1) }} - {{ formatNumber(Math.min(currentPage * pageSize, filteredDebtors.length)) }} dari {{ formatNumber(filteredDebtors.length) }} pelanggan
         </span>
         <div class="page-buttons">
           <button
@@ -85,7 +85,7 @@
           >
             &laquo; Sebelumnya
           </button>
-          <span class="page-num">Hal {{ currentPage }} / {{ totalPages }}</span>
+          <span class="page-num">Hal {{ formatNumber(currentPage) }} / {{ formatNumber(totalPages) }}</span>
           <button
             class="btn-page"
             :disabled="currentPage === totalPages"
@@ -168,6 +168,7 @@ import Icon from '../components/Icon.vue';
 import { apiFetch } from '../api.js';
 import { useAppStore } from '../stores/app.js';
 import { useOfflineStore } from '../stores/offline.js';
+import { formatNumber } from '../utils/format.js';
 
 const appStore = useAppStore();
 const offlineStore = useOfflineStore();
@@ -283,10 +284,6 @@ function sendWaReminder(d) {
     ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
     : `https://wa.me/?text=${encodeURIComponent(text)}`;
   window.open(url, '_blank');
-}
-
-function formatNumber(num) {
-  return (num || 0).toLocaleString('id-ID');
 }
 
 onMounted(() => {
