@@ -47,6 +47,22 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Sembunyikan scrollbar visual (atas-bawah & kiri-kanan) di seluruh aplikasi namun fungsi scroll tetap aktif */
+html,
+body,
+#app {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge, Opera */
+  width: 0;
+  height: 0;
+}
+
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background-color: var(--bg-app);
@@ -476,3 +492,38 @@ input:focus, select:focus, textarea:focus {
     display: flex !important;
   }
 }
+
+/* Sembunyikan scrollbar visual tapi tetap bisa scroll (No Scrollbar) */
+.no-scrollbar,
+.category-tabs,
+.stock-source-tabs,
+.filter-tabs,
+.nav-scroll,
+.tabs-scroll,
+.filter-bar,
+.sheet-content,
+.modal-body,
+.table-wrapper,
+.dropdown-menu,
+.cust-options-list {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.no-scrollbar::-webkit-scrollbar,
+.category-tabs::-webkit-scrollbar,
+.stock-source-tabs::-webkit-scrollbar,
+.filter-tabs::-webkit-scrollbar,
+.nav-scroll::-webkit-scrollbar,
+.tabs-scroll::-webkit-scrollbar,
+.filter-bar::-webkit-scrollbar,
+.sheet-content::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar,
+.table-wrapper::-webkit-scrollbar,
+.dropdown-menu::-webkit-scrollbar,
+.cust-options-list::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+  width: 0;
+  height: 0;
+}
+

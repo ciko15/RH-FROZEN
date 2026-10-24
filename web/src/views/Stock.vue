@@ -7,34 +7,37 @@
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="Cari barang..."
+          placeholder="Cari barang atau kategori..."
           class="search-input"
         />
+        <button
+          v-if="searchQuery"
+          type="button"
+          class="search-clear-btn"
+          @click="searchQuery = ''"
+          title="Hapus pencarian"
+        >
+          <Icon name="x" size="14" />
+        </button>
       </div>
-      <button
-        v-if="canManageStock"
-        class="btn-manage"
-        @click="showAddModal = true"
-      >
-        <Icon name="plus" size="15" />
-        <span>Tambah Barang</span>
-      </button>
-      <router-link
-        v-if="canManageStock"
-        to="/stock/opname"
-        class="btn-nav-stock"
-      >
-        Opname
-      </router-link>
-      <!-- Tombol Beli PO disembunyikan sementara
-      <router-link
-        v-if="canManageStock"
-        to="/purchases"
-        class="btn-nav-stock"
-      >
-        Beli
-      </router-link>
-      -->
+      <div class="header-action-group" v-if="canManageStock">
+        <button
+          class="btn-manage"
+          @click="showAddModal = true"
+          title="Tambah Produk / Barang Baru"
+        >
+          <Icon name="plus" size="15" />
+          <span>Tambah Barang</span>
+        </button>
+        <router-link
+          to="/stock/opname"
+          class="btn-nav-stock"
+          title="Buka Menu Stock Opname Fisik"
+        >
+          <Icon name="check" size="14" />
+          <span>Opname</span>
+        </router-link>
+      </div>
     </div>
 
     <!-- Tab Pilihan: Stok Saya vs Stok Admin (Khusus Sales) -->
@@ -116,27 +119,28 @@
             </div>
             <div class="stock-actions-btn" v-if="canManageStock">
               <button
-                class="btn-add-stock"
+                class="stock-btn btn-add-stock"
                 @click="openAddStockModal(p)"
-                title="Tambah Stok Masuk"
+                title="Tambah Stok Masuk (+)"
               >
-                <Icon name="plus" size="12" />
-                <span>+ Stok</span>
+                <Icon name="plus" size="13" />
+                <span>Stok</span>
               </button>
               <button
-                class="btn-edit"
+                class="stock-btn btn-edit"
                 @click="openEditModal(p)"
                 title="Edit Data & Gambar Barang"
               >
-                <Icon name="edit" size="12" />
+                <Icon name="edit" size="13" />
                 <span>Edit</span>
               </button>
               <button
-                class="btn-adjust"
+                class="stock-btn btn-adjust"
                 @click="openAdjustModal(p)"
                 title="Koreksi / Penyesuaian Stok"
               >
-                Koreksi
+                <Icon name="sliders" size="13" />
+                <span>Koreksi</span>
               </button>
             </div>
           </div>
@@ -599,8 +603,8 @@ function handleImageUpload(event, target = 'edit') {
   reader.onload = (e) => {
     const img = new Image();
     img.onload = () => {
-      // Resize gambar proporsional maks 400x400 agar ringan dan hemat database
-      const maxDim = 400;
+      // Resize gambar proporsional maks 160x160 agar ringan, cepat, dan muat dalam batas sel Google Spreadsheet
+      const maxDim = 160;
       let width = img.width;
       let height = img.height;
 
@@ -622,8 +626,8 @@ function handleImageUpload(event, target = 'edit') {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Konversi ke format web JPEG 80% quality
-      const base64Data = canvas.toDataURL('image/jpeg', 0.8);
+      // Konversi ke format web JPEG 75% quality (~5KB - 8KB)
+      const base64Data = canvas.toDataURL('image/jpeg', 0.75);
       if (target === 'edit') {
         editForm.value.image = base64Data;
       } else {
@@ -851,11 +855,14 @@ onMounted(() => {
 .stock-header {
   display: flex;
   gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
   margin-bottom: 14px;
 }
 .search-input-wrapper {
   position: relative;
   flex: 1;
+  min-width: 200px;
   display: flex;
   align-items: center;
 }
@@ -868,6 +875,31 @@ onMounted(() => {
 .search-input {
   width: 100%;
   padding-left: 36px !important;
+  padding-right: 34px !important;
+  height: 40px;
+}
+.search-clear-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+.search-clear-btn:hover {
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--danger, #ef4444);
+}
+.header-action-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 .btn-manage {
   display: inline-flex;
@@ -877,9 +909,12 @@ onMounted(() => {
   color: white;
   font-size: 13px;
   font-weight: 600;
+  height: 40px;
   padding: 0 14px;
+  border-radius: var(--radius-btn, 8px);
   white-space: nowrap;
   box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+  cursor: pointer;
   transition: all 0.15s ease;
 }
 .btn-manage:hover {
@@ -888,15 +923,17 @@ onMounted(() => {
 }
 .btn-nav-stock {
   background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  border: 1.5px solid var(--border-color);
   color: var(--text-main);
   text-decoration: none;
   font-size: 13px;
-  padding: 0 12px;
-  border-radius: var(--radius-btn);
-  display: flex;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-btn, 8px);
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   font-weight: 600;
   white-space: nowrap;
   transition: all 0.15s ease;
@@ -904,12 +941,22 @@ onMounted(() => {
 .btn-nav-stock:hover {
   border-color: var(--primary);
   color: var(--primary);
+  background: var(--bg-hover, #f8fafc);
+  transform: translateY(-1px);
 }
 .category-tabs {
   display: flex;
   gap: 6px;
   overflow-x: auto;
   margin-bottom: 14px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.category-tabs::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 .cat-btn {
   background: var(--bg-card);
@@ -1058,65 +1105,89 @@ onMounted(() => {
   gap: 6px;
   align-items: center;
 }
-.btn-add-stock {
+.stock-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background: rgba(22, 163, 74, 0.12);
-  color: #16a34a;
-  border: 1px solid rgba(22, 163, 74, 0.3);
-  font-size: 11px;
-  font-weight: 700;
-  min-height: 28px;
-  padding: 2px 8px;
-  border-radius: 6px;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
   cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid transparent;
   transition: all 0.15s ease;
 }
-[data-theme="dark"] .btn-add-stock {
-  background: rgba(34, 197, 94, 0.18);
-  color: #4ade80;
-  border-color: rgba(34, 197, 94, 0.35);
+.stock-btn:active {
+  transform: scale(0.97);
+}
+
+/* + Stok Masuk */
+.btn-add-stock {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.25);
 }
 .btn-add-stock:hover {
   background: #16a34a;
   color: #ffffff;
+  border-color: #16a34a;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.3);
 }
+[data-theme="dark"] .btn-add-stock {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+[data-theme="dark"] .btn-add-stock:hover {
+  background: #22c55e;
+  color: #0f172a;
+}
+
+/* Edit Data */
 .btn-edit {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   background: rgba(37, 99, 235, 0.1);
-  color: var(--primary);
-  border: 1px solid rgba(37, 99, 235, 0.25);
-  font-size: 11px;
-  font-weight: 600;
-  min-height: 28px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  transition: all 0.15s ease;
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.22);
+}
+.btn-edit:hover {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
 }
 [data-theme="dark"] .btn-edit {
   background: rgba(56, 189, 248, 0.15);
   color: #38bdf8;
-  border-color: rgba(56, 189, 248, 0.35);
+  border-color: rgba(56, 189, 248, 0.3);
 }
-.btn-edit:hover {
-  background: var(--primary);
-  color: #ffffff;
+[data-theme="dark"] .btn-edit:hover {
+  background: #38bdf8;
+  color: #0f172a;
 }
+
+/* Koreksi Stok */
 .btn-adjust {
-  background: var(--bg-app);
-  color: var(--text-main);
-  border: 1px solid var(--border-color);
-  font-size: 11px;
-  min-height: 28px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  transition: all 0.15s ease;
+  background: var(--bg-app, #f8fafc);
+  color: var(--text-main, #334155);
+  border-color: var(--border-color, #e2e8f0);
 }
 .btn-adjust:hover {
-  border-color: var(--text-muted);
+  background: var(--bg-hover, #e2e8f0);
+  border-color: #94a3b8;
+  color: var(--text-main);
+}
+[data-theme="dark"] .btn-adjust {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+[data-theme="dark"] .btn-adjust:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
 }
 
 /* Sheet Modals */
@@ -1201,18 +1272,6 @@ onMounted(() => {
   height: 100%;
   object-fit: cover;
 }
-.stock-actions-btn {
-  display: flex;
-  gap: 6px;
-}
-.btn-edit {
-  background: var(--primary);
-  color: white;
-  font-size: 11px;
-  min-height: 28px;
-  padding: 2px 8px;
-  border-radius: 6px;
-}
 .image-upload-section {
   display: flex;
   align-items: center;
@@ -1294,5 +1353,50 @@ onMounted(() => {
 }
 .helper-note strong {
   color: var(--primary);
+}
+
+@media (max-width: 640px) {
+  .stock-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .search-input-wrapper {
+    width: 100%;
+  }
+  .header-action-group {
+    width: 100%;
+  }
+  .header-action-group .btn-manage {
+    flex: 1.2;
+    justify-content: center;
+  }
+  .header-action-group .btn-nav-stock {
+    flex: 0.8;
+    justify-content: center;
+  }
+  .stock-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .stock-right {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 10px;
+    width: 100%;
+  }
+  .stock-actions-btn {
+    flex: 1;
+    justify-content: flex-end;
+  }
+  .stock-btn {
+    flex: 1;
+    max-width: 90px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
 }
 </style>

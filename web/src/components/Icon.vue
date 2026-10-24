@@ -196,6 +196,19 @@
       <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
     </g>
 
+    <!-- Sliders / Adjust -->
+    <g v-else-if="name === 'sliders'">
+      <line x1="4" y1="21" x2="4" y2="14"></line>
+      <line x1="4" y1="10" x2="4" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="12"></line>
+      <line x1="12" y1="8" x2="12" y2="3"></line>
+      <line x1="20" y1="21" x2="20" y2="16"></line>
+      <line x1="20" y1="12" x2="20" y2="3"></line>
+      <line x1="1" y1="14" x2="7" y2="14"></line>
+      <line x1="9" y1="8" x2="15" y2="8"></line>
+      <line x1="17" y1="16" x2="23" y2="16"></line>
+    </g>
+
     <!-- Check / Centang -->
     <g v-else-if="name === 'check'">
       <polyline points="20 6 9 17 4 12"></polyline>
@@ -217,9 +230,15 @@
       <polyline points="10 9 9 9 8 9"></polyline>
     </g>
 
-    <!-- Message Circle / WhatsApp -->
+    <!-- Message Circle -->
     <g v-else-if="name === 'message-circle'">
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+    </g>
+
+    <!-- WhatsApp Asli -->
+    <g v-else-if="name === 'whatsapp'">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+      <path d="M9.5 9a.5.5 0 0 0-.5.5c0 2.5 2 5 4.5 5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.3-.4l-1.1-.4a.5.5 0 0 0-.5.1l-.4.4c-.8-.4-1.4-1-1.8-1.8l.4-.4a.5.5 0 0 0 .1-.5L10.4 9.8a.5.5 0 0 0-.4-.3H9.5z"></path>
     </g>
 
     <!-- Rotate CCW / Retur -->

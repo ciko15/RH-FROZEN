@@ -78,6 +78,10 @@
         <span class="sum-lbl">Bon sebelumnya</span>
         <span class="sum-val font-bold">{{ formatRp(invoice.previous_balance) }}</span>
       </div>
+      <div class="sum-row" v-if="invoice.discount_total > 0">
+        <span class="sum-lbl text-danger font-bold">Diskon / Potongan</span>
+        <span class="sum-val font-bold text-danger">- {{ formatRp(invoice.discount_total) }}</span>
+      </div>
       <div class="sum-row">
         <span class="sum-lbl">Total tagihan awal</span>
         <span class="sum-val font-bold">{{ formatRp(invoice.total_due) }}</span>
@@ -153,20 +157,25 @@
 
     <!-- Action Bar (Tidak Tercetak) -->
     <div class="action-bar no-print" v-if="showActions">
-      <button class="btn-inv btn-print" @click="handlePrint">
-        <Icon name="printer" size="14" /> Cetak
+      <button class="btn-inv btn-print" @click="handlePrint" title="Cetak Struk Thermal / Printer">
+        <Icon name="printer" size="15" />
+        <span>Cetak</span>
       </button>
-      <button class="btn-inv btn-photo" @click="handleSendAsImage" :disabled="imageLoading">
-        <Icon name="camera" size="14" /> {{ imageLoading ? 'Proses...' : 'Kirim Foto' }}
+      <button class="btn-inv btn-wa" @click="handleWhatsApp" title="Kirim Nota Tagihan ke WhatsApp Pelanggan">
+        <Icon name="whatsapp" size="15" />
+        <span>Kirim WA</span>
       </button>
-      <button class="btn-inv btn-pdf" @click="handleDownloadPdf" :disabled="pdfLoading">
-        <Icon name="file-text" size="14" /> {{ pdfLoading ? 'Menyiapkan...' : 'PDF' }}
+      <button class="btn-inv btn-photo" @click="handleSendAsImage" :disabled="imageLoading" title="Bagikan Struk sebagai Foto Gambar">
+        <Icon name="camera" size="15" />
+        <span>{{ imageLoading ? 'Proses...' : 'Foto' }}</span>
       </button>
-      <button class="btn-inv btn-wa" @click="handleWhatsApp">
-        <Icon name="message-circle" size="14" /> WA Teks
+      <button class="btn-inv btn-pdf" @click="handleDownloadPdf" :disabled="pdfLoading" title="Download File Dokumen PDF">
+        <Icon name="file-text" size="15" />
+        <span>{{ pdfLoading ? '...' : 'PDF' }}</span>
       </button>
-      <button class="btn-inv btn-retur" v-if="!invoice.is_return" @click="handleGoToReturn">
-        <Icon name="rotate-ccw" size="14" /> Retur
+      <button class="btn-inv btn-retur" v-if="!invoice.is_return" @click="handleGoToReturn" title="Retur Produk Transaksi Ini">
+        <Icon name="rotate-ccw" size="15" />
+        <span>Retur</span>
       </button>
     </div>
   </div>
@@ -548,20 +557,59 @@ function handleWhatsApp() {
 .action-bar {
   display: flex;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 18px;
+  flex-wrap: wrap;
 }
 .btn-inv {
   flex: 1;
-  min-height: 40px;
+  min-width: 60px;
+  height: 38px;
+  min-height: 38px;
   font-size: 12px;
-  border-radius: var(--radius-btn);
+  font-weight: 600;
+  border-radius: var(--radius-btn, 8px);
   color: white;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
+.btn-inv:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
+}
+.btn-inv:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn-inv:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .btn-print { background: #334155; }
+.btn-wa { background: #16a34a; }
 .btn-photo { background: #0284c7; }
 .btn-pdf { background: #6366f1; }
-.btn-wa { background: #16a34a; }
-.btn-retur { background: var(--danger); }
+.btn-retur { background: #dc2626; }
+
+@media (max-width: 480px) {
+  .action-bar {
+    gap: 6px;
+  }
+  .btn-inv {
+    font-size: 11px;
+    padding: 0 6px;
+    height: 36px;
+    min-height: 36px;
+  }
+}
 
 /* Print Styles */
 @media print {

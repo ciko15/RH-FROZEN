@@ -231,6 +231,17 @@ export async function getTabRows(tabName, forceFresh = false) {
 
   // 1. Coba baca secara live dari Google Spreadsheet jika Service Account belum ada
   if (!SA_EMAIL || !SA_KEY) {
+    if (GAS_ONLY_TABS.includes(tabName)) {
+      try {
+        const gasResult = await callGas('getTabData', { tabName });
+        const rows = Array.isArray(gasResult) ? gasResult : [];
+        setCached(tabName, rows, 60);
+        return rows;
+      } catch (e) {
+        console.error(`[GAS READ ERROR] Tab ${tabName}:`, e.message);
+      }
+    }
+
     const liveRows = await fetchTabRowsFromGoogle(tabName);
     if (liveRows !== null && liveRows.length > 0) {
       setCached(tabName, liveRows);
@@ -2022,8 +2033,8 @@ export async function getTabRows(tabName, forceFresh = false) {
 /**
  * Membaca banyak tab sekaligus dengan values.batchGet
  */
-// Tab-tab transaksional yang hanya ada di GAS (AuditLog)
-const GAS_ONLY_TABS = ['AuditLog'];
+// Tab-tab transaksional & tab dengan kolom gambar base64 yang dibaca via GAS (karena gviz salah mendeteksi tipe teks panjang/base64 menjadi boolean)
+const GAS_ONLY_TABS = ['AuditLog', 'Products'];
 
 export async function getTabsBatch(tabNames) {
   const result = {};

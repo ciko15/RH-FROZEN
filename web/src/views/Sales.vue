@@ -191,17 +191,49 @@
         </div>
         <div v-else class="cart-list">
           <div v-for="(it, idx) in cart" :key="it.product_id" class="cart-row">
-            <div class="cart-info">
-              <div class="cart-name">{{ it.emoji }} {{ it.product_name }}</div>
-              <small class="text-muted">@ Rp {{ fmt(it.price) }} · Maks stok: {{ fmt(it.maxStock) }}</small>
-            </div>
-            <div class="cart-ctrl">
-              <div class="qty-btn-group">
-                <button type="button" @click="decCart(idx)">−</button>
-                <input v-model.number="it.qty" type="number" min="1" :max="it.maxStock" @input="clampQty(it)" />
-                <button type="button" :disabled="it.qty >= it.maxStock" @click="it.qty++">+</button>
+            <div class="cart-main-line">
+              <div class="cart-info">
+                <div class="cart-name">{{ it.emoji }} {{ it.product_name }}</div>
+                <small class="text-muted">@ Rp {{ fmt(it.price) }} · Maks stok: {{ fmt(it.maxStock) }}</small>
               </div>
-              <div class="cart-subtotal">Rp {{ fmt(it.qty * it.price) }}</div>
+              <div class="cart-ctrl">
+                <div class="qty-btn-group">
+                  <button type="button" @click="decCart(idx)">−</button>
+                  <input v-model.number="it.qty" type="number" min="1" :max="it.maxStock" @input="clampQty(it)" />
+                  <button type="button" :disabled="it.qty >= it.maxStock" @click="it.qty++">+</button>
+                </div>
+                <div class="cart-subtotal">
+                  <div>Rp {{ fmt((it.qty * it.price) - (it.discount || 0)) }}</div>
+                  <div v-if="it.discount > 0" class="item-disc-tag">Potongan: -Rp {{ fmt(it.discount) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Kolom Input Potongan / Diskon (Selalu Tampak) -->
+            <div class="cart-discount-input-row">
+              <div class="disc-label-group">
+                <Icon name="tag" size="13" class="disc-icon" />
+                <span class="disc-title">Potongan / Diskon:</span>
+              </div>
+              <div class="disc-input-box">
+                <span class="disc-prefix">Rp</span>
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  :value="it.discount ? fmt(it.discount) : ''"
+                  @input="onItemDiscountInput(it, $event)"
+                  placeholder="0"
+                  class="disc-field"
+                  title="Masukkan nominal potongan diskon barang ini"
+                />
+                <button
+                  v-if="it.discount > 0"
+                  type="button"
+                  class="btn-clear-disc"
+                  @click="it.discount = 0; if (payMethod !== 'Tempo') paidAmount = totalDue;"
+                  title="Hapus potongan"
+                >✕</button>
+              </div>
             </div>
           </div>
         </div>
@@ -210,7 +242,15 @@
         <div v-if="cart.length > 0" class="checkout-box">
           <div class="sum-row">
             <span>Subtotal Penjualan</span>
-            <strong>Rp {{ fmt(cartTotal) }}</strong>
+            <strong>Rp {{ fmt(cartGrossSubtotal) }}</strong>
+          </div>
+          <div class="sum-row text-danger font-bold" v-if="cartTotalDiscount > 0">
+            <span>Diskon / Potongan Total</span>
+            <span>- Rp {{ fmt(cartTotalDiscount) }}</span>
+          </div>
+          <div class="sum-row" v-if="cartTotalDiscount > 0">
+            <span>Subtotal Setelah Diskon</span>
+            <strong>Rp {{ fmt(cartNetSubtotal) }}</strong>
           </div>
           <div class="sum-row">
             <span>Bon / Piutang Sebelumnya</span>
@@ -428,11 +468,25 @@ const filteredStock = computed(() => {
   return stock.value.filter(s => !q || (s.product_name || '').toLowerCase().includes(q));
 });
 
-const cartTotal = computed(() => cart.value.reduce((s, it) => s + (it.qty * it.price), 0));
-const totalDue = computed(() => cartTotal.value + parseFloat(selectedCustomer.value?.balance || 0));
+const cartGrossSubtotal = computed(() => cart.value.reduce((s, it) => s + (it.qty * it.price), 0));
+const cartTotalDiscount = computed(() => cart.value.reduce((s, it) => s + (Number(it.discount) || 0), 0));
+const cartNetSubtotal = computed(() => Math.max(0, cartGrossSubtotal.value - cartTotalDiscount.value));
+const cartTotal = computed(() => cartNetSubtotal.value);
+const totalDue = computed(() => cartNetSubtotal.value + parseFloat(selectedCustomer.value?.balance || 0));
 
 function fmt(n) {
   return formatNumber(n);
+}
+
+function onItemDiscountInput(item, event) {
+  const raw = event.target.value.replace(/\D/g, '');
+  const val = raw ? parseInt(raw, 10) : 0;
+  const maxDisc = item.qty * item.price;
+  item.discount = Math.min(val, maxDisc);
+  event.target.value = item.discount ? formatNumber(item.discount) : '';
+  if (payMethod.value !== 'Tempo') {
+    paidAmount.value = totalDue.value;
+  }
 }
 
 function cartQtyOf(prodId) {
@@ -458,19 +512,39 @@ function addToCart(s) {
       image: s.image || '',
       price: s.price || 0,
       qty: 1,
-      maxStock: s.stock
+      maxStock: s.stock,
+      discount: 0,
+      showDisc: false
     });
+  }
+  if (payMethod.value !== 'Tempo') {
+    paidAmount.value = totalDue.value;
   }
 }
 
 function decCart(idx) {
-  if (cart.value[idx].qty > 1) cart.value[idx].qty--;
-  else cart.value.splice(idx, 1);
+  if (cart.value[idx].qty > 1) {
+    cart.value[idx].qty--;
+    if (cart.value[idx].discount > cart.value[idx].qty * cart.value[idx].price) {
+      cart.value[idx].discount = cart.value[idx].qty * cart.value[idx].price;
+    }
+  } else {
+    cart.value.splice(idx, 1);
+  }
+  if (payMethod.value !== 'Tempo') {
+    paidAmount.value = totalDue.value;
+  }
 }
 
 function clampQty(it) {
   if (it.qty > it.maxStock) it.qty = it.maxStock;
   if (it.qty < 1) it.qty = 1;
+  if (it.discount > it.qty * it.price) {
+    it.discount = it.qty * it.price;
+  }
+  if (payMethod.value !== 'Tempo') {
+    paidAmount.value = totalDue.value;
+  }
 }
 
 function onCustomerChange() {
@@ -532,7 +606,8 @@ async function submitTransaction() {
         items: cart.value.map(it => ({
           product_id: it.product_id,
           qty: Number(it.qty) || 1,
-          price: Number(it.price) || 0
+          price: Number(it.price) || 0,
+          discount: Number(it.discount) || 0
         }))
       })
     });
@@ -1093,10 +1168,16 @@ onUnmounted(() => {
 }
 .cart-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   padding: 10px 0;
   border-bottom: 1px dashed var(--border-color);
+  gap: 8px;
+}
+.cart-main-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
 }
 .cart-name {
   font-weight: 700;
@@ -1140,6 +1221,86 @@ onUnmounted(() => {
   min-width: 76px;
   text-align: right;
   color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.item-disc-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #dc2626;
+}
+
+/* Kolom Input Diskon Item (Permanen & Rapi) */
+.cart-discount-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(245, 158, 11, 0.05);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+[data-theme="dark"] .cart-discount-input-row {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.disc-label-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #d97706;
+}
+[data-theme="dark"] .disc-label-group {
+  color: #fbbf24;
+}
+.disc-icon {
+  flex-shrink: 0;
+}
+.disc-title {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.disc-input-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px 8px;
+  height: 28px;
+  transition: border-color 0.15s ease;
+}
+.disc-input-box:focus-within {
+  border-color: #d97706;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15);
+}
+.disc-prefix {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.disc-field {
+  width: 75px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  outline: none;
+  padding: 0;
+  text-align: right;
+}
+.btn-clear-disc {
+  background: transparent;
+  border: none;
+  color: #dc2626;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 3px;
+  font-weight: 800;
 }
 
 .checkout-box {
