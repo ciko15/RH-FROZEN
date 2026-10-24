@@ -3,7 +3,7 @@ import { getCached, setCached, clearCache } from './cache.js';
 import { ApiError } from './errors.js';
 import { callGas } from './gas.js';
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1nq3PVJm0--u34XKWS4KzOchVPmXbQPcdW5EJzXWTF9Y';
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID || '1TdjbyKrQxmb5teiU4LHjLO0lyyCwPW6pjTra9EXwsyw';
 const SA_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const SA_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
