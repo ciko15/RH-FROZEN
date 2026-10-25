@@ -73,6 +73,8 @@ export default async function handler(req, res) {
         const totalShippedQty = items.reduce((sum, it) => sum + (it.qty_shipped !== null ? it.qty_shipped : 0), 0);
         const shortageTotal = items.reduce((sum, it) => sum + (it.shortage || 0), 0);
 
+        const hasCorrection = items.some(it => it.qty_shipped !== null && it.qty_shipped !== undefined && it.qty_shipped !== it.qty);
+
         return {
           ...o,
           sales_name: sales ? sales.full_name : '-',
@@ -81,6 +83,7 @@ export default async function handler(req, res) {
           items_count: items.length,
           shortage_total: shortageTotal,
           shortage_items: items.filter(it => it.shortage > 0).length,
+          has_correction: hasCorrection,
           items
         };
       });
@@ -94,7 +97,12 @@ export default async function handler(req, res) {
         );
       }
 
-      filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      // Urutkan data yang baru berubah / terbaru di posisi paling atas
+      filtered.sort((a, b) => {
+        const timeA = new Date(a.updated_at || a.created_at || (a.order_date + ' ' + (a.order_time || '00:00:00')) || 0).getTime();
+        const timeB = new Date(b.updated_at || b.created_at || (b.order_date + ' ' + (b.order_time || '00:00:00')) || 0).getTime();
+        return timeB - timeA;
+      });
 
       // Rekap akumulasi produk yang belum terkirim (status: Proses) dari semua order
       const pendingOrders = enrichedOrders.filter(o => o.status === 'Proses');

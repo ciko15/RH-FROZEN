@@ -27,77 +27,145 @@
           <Icon name="x" size="14" />
         </button>
       </div>
-      <div class="search-stats">
-        <span>Menampilkan <strong>{{ filteredProducts.length }}</strong> dari {{ products.length }} barang</span>
-        <span v-if="diffCount > 0" class="diff-count-badge">⚠️ {{ diffCount }} barang ada selisih</span>
-        <span v-else class="same-count-badge">✓ Semua stok sesuai</span>
+
+      <!-- Quick Filter Status Selisih & Summary Stats -->
+      <div class="status-filter-row">
+        <div class="status-pills">
+          <button
+            type="button"
+            class="pill-btn"
+            :class="{ active: diffFilter === 'all' }"
+            @click="setDiffFilter('all')"
+          >
+            Semua ({{ products.length }})
+          </button>
+          <button
+            type="button"
+            class="pill-btn pill-warning"
+            :class="{ active: diffFilter === 'diff' }"
+            @click="setDiffFilter('diff')"
+          >
+            ⚠️ Ada Selisih ({{ diffCount }})
+          </button>
+          <button
+            type="button"
+            class="pill-btn pill-success"
+            :class="{ active: diffFilter === 'same' }"
+            @click="setDiffFilter('same')"
+          >
+            ✓ Sesuai ({{ sameCount }})
+          </button>
+        </div>
+
+        <div class="search-stats">
+          <span>Menampilkan <strong>{{ filteredProducts.length }}</strong> barang</span>
+        </div>
       </div>
+    </div>
+
+    <!-- Filter Kategori Tabs (seperti di Stok Barang) -->
+    <div class="category-tabs">
+      <button
+        v-for="cat in categories"
+        :key="cat"
+        class="cat-btn"
+        :class="{ active: selectedCategory === cat }"
+        @click="selectCategory(cat)"
+      >
+        {{ cat }}
+      </button>
     </div>
 
     <div v-if="loading" class="state-msg">Memuat data barang...</div>
     <div v-else-if="filteredProducts.length === 0" class="empty-state card">
       <div class="empty-icon-box"><Icon name="package" size="38" /></div>
       <h3>Barang Tidak Ditemukan</h3>
-      <p>Tidak ada barang yang cocok dengan kata kunci "{{ searchQuery }}"</p>
+      <p>Tidak ada barang yang cocok dengan filter atau kata kunci "{{ searchQuery }}"</p>
     </div>
-    <div v-else class="stock-list">
-      <div
-        v-for="p in filteredProducts"
-        :key="p.id"
-        class="card stock-card opname-card"
-        :class="{ 'card-diff': getDiff(p) !== 0 }"
-      >
-        <div class="stock-left">
-          <div class="prod-thumb">
-            <img
-              v-if="isValidImage(p.image)"
-              :src="p.image"
-              :alt="p.name"
-              class="prod-img"
-              @error="p.image = ''"
-            />
-            <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
+    <div v-else>
+      <div class="stock-list">
+        <div
+          v-for="p in paginatedProducts"
+          :key="p.id"
+          class="card stock-card opname-card"
+          :class="{ 'card-diff': getDiff(p) !== 0 }"
+        >
+          <div class="stock-left">
+            <div class="prod-thumb">
+              <img
+                v-if="isValidImage(p.image)"
+                :src="p.image"
+                :alt="p.name"
+                class="prod-img"
+                @error="p.image = ''"
+              />
+              <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
+            </div>
+            <div class="stock-details">
+              <span class="prod-name">{{ p.name }}</span>
+              <small class="prod-cat">{{ p.category || 'Frozen Food' }}</small>
+              <div class="sys-stock-label">
+                Stok Sistem: <strong>{{ formatNumber(p.stock) }} pcs</strong>
+              </div>
+            </div>
           </div>
-          <div class="stock-details">
-            <span class="prod-name">{{ p.name }}</span>
-            <small class="prod-cat">{{ p.category || 'Frozen Food' }}</small>
-            <div class="sys-stock-label">
-              Stok Sistem: <strong>{{ formatNumber(p.stock) }} pcs</strong>
+
+          <div class="opname-right">
+            <div class="input-count-wrap">
+              <label class="count-label">Fisik (pcs)</label>
+              <div class="input-with-reset">
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  :value="formatNumber(p.counted)"
+                  @input="onCountedInput(p, $event)"
+                  placeholder="0"
+                  class="counted-input"
+                />
+                <button
+                  v-if="getDiff(p) !== 0"
+                  class="btn-reset-item"
+                  title="Kembalikan sesuai stok sistem"
+                  @click="resetItem(p)"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div class="diff-badge-wrap">
+              <span
+                class="diff-badge"
+                :class="getDiffClass(p)"
+              >
+                {{ getDiffLabel(p) }}
+              </span>
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="opname-right">
-          <div class="input-count-wrap">
-            <label class="count-label">Fisik (pcs)</label>
-            <div class="input-with-reset">
-              <input
-                type="text"
-                inputmode="numeric"
-                :value="formatNumber(p.counted)"
-                @input="onCountedInput(p, $event)"
-                placeholder="0"
-                class="counted-input"
-              />
-              <button
-                v-if="getDiff(p) !== 0"
-                class="btn-reset-item"
-                title="Kembalikan sesuai stok sistem"
-                @click="resetItem(p)"
-              >
-                Reset
-              </button>
-            </div>
-          </div>
-
-          <div class="diff-badge-wrap">
-            <span
-              class="diff-badge"
-              :class="getDiffClass(p)"
-            >
-              {{ getDiffLabel(p) }}
-            </span>
-          </div>
+      <!-- Pagination Filter Halaman (seperti Stok Barang) -->
+      <div v-if="opnameTotalPages > 1" class="pagination-bar">
+        <span class="page-info">
+          Menampilkan {{ formatNumber((opnameCurrentPage - 1) * opnamePageSize + 1) }} - {{ formatNumber(Math.min(opnameCurrentPage * opnamePageSize, filteredProducts.length)) }} dari {{ formatNumber(filteredProducts.length) }} barang
+        </span>
+        <div class="page-buttons">
+          <button
+            class="btn-page"
+            :disabled="opnameCurrentPage === 1"
+            @click="opnameCurrentPage--"
+          >
+            &laquo; Sebelumnya
+          </button>
+          <span class="page-num">Hal {{ opnameCurrentPage }} / {{ opnameTotalPages }}</span>
+          <button
+            class="btn-page"
+            :disabled="opnameCurrentPage === opnameTotalPages"
+            @click="opnameCurrentPage++"
+          >
+            Berikutnya &raquo;
+          </button>
         </div>
       </div>
     </div>
@@ -146,6 +214,39 @@ const products = ref([]);
 const searchQuery = ref('');
 const opnameNote = ref('Stock Opname Rutin');
 
+// Filter Kategori & Status Selisih
+const selectedCategory = ref('Semua');
+const diffFilter = ref('all'); // 'all' | 'diff' | 'same'
+
+// Pagination (10 per halaman seperti Stok Barang)
+const opnameCurrentPage = ref(1);
+const opnamePageSize = ref(10);
+
+const dynamicCategoryList = computed(() => {
+  const cats = new Set();
+  ['Bakso & Daging', 'Sosis', 'Mie & Pasta', 'Dimsum & Pangsit', 'Camilan & Gorengan', 'Nugget & Ayam', 'Kue & Roti', 'Frozen Food'].forEach(c => cats.add(c));
+  products.value.forEach(p => {
+    if (p.category && p.category.trim()) {
+      cats.add(p.category.trim());
+    }
+  });
+  return Array.from(cats).sort((a, b) => a.localeCompare(b));
+});
+
+const categories = computed(() => {
+  return ['Semua', ...dynamicCategoryList.value];
+});
+
+function selectCategory(cat) {
+  selectedCategory.value = cat;
+  opnameCurrentPage.value = 1;
+}
+
+function setDiffFilter(filter) {
+  diffFilter.value = filter;
+  opnameCurrentPage.value = 1;
+}
+
 async function fetchProducts() {
   loading.value = true;
   try {
@@ -161,17 +262,48 @@ async function fetchProducts() {
   }
 }
 
-const filteredProducts = computed(() => {
-  if (!searchQuery.value) return products.value;
-  const q = searchQuery.value.toLowerCase().trim();
-  return products.value.filter(p =>
-    (p.name && p.name.toLowerCase().includes(q)) ||
-    (p.category && p.category.toLowerCase().includes(q))
-  );
-});
-
 const diffCount = computed(() => {
   return products.value.filter(p => getDiff(p) !== 0).length;
+});
+
+const sameCount = computed(() => {
+  return products.value.filter(p => getDiff(p) === 0).length;
+});
+
+const filteredProducts = computed(() => {
+  let list = products.value;
+
+  // 1. Filter Kategori
+  if (selectedCategory.value !== 'Semua') {
+    list = list.filter(p => p.category === selectedCategory.value);
+  }
+
+  // 2. Filter Status Selisih
+  if (diffFilter.value === 'diff') {
+    list = list.filter(p => getDiff(p) !== 0);
+  } else if (diffFilter.value === 'same') {
+    list = list.filter(p => getDiff(p) === 0);
+  }
+
+  // 3. Search Query
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase().trim();
+    list = list.filter(p =>
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.category && p.category.toLowerCase().includes(q))
+    );
+  }
+
+  return list;
+});
+
+const opnameTotalPages = computed(() => {
+  return Math.max(1, Math.ceil(filteredProducts.value.length / opnamePageSize.value));
+});
+
+const paginatedProducts = computed(() => {
+  const start = (opnameCurrentPage.value - 1) * opnamePageSize.value;
+  return filteredProducts.value.slice(start, start + opnamePageSize.value);
 });
 
 function onCountedInput(p, event) {
@@ -339,28 +471,134 @@ onMounted(() => {
 }
 .search-stats {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* Status Filter Row & Pills */
+.status-filter-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
 }
-.diff-count-badge {
-  font-weight: 700;
-  color: #b45309;
-  background: #fef3c7;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 11px;
+.status-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-.same-count-badge {
+.pill-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 12px;
   font-weight: 600;
-  color: #15803d;
-  background: #dcfce7;
-  padding: 3px 8px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pill-btn:hover {
+  background: var(--bg-hover, #f1f5f9);
+}
+.pill-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.pill-btn.pill-warning.active {
+  background: #f59e0b;
+  color: #fff;
+  border-color: #f59e0b;
+}
+.pill-btn.pill-success.active {
+  background: #10b981;
+  color: #fff;
+  border-color: #10b981;
+}
+
+/* Category Tabs (Horizontal Scrollbarless) */
+.category-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.category-tabs::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.cat-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 12px;
+  min-height: 34px;
+  padding: 4px 12px;
+  white-space: nowrap;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cat-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+/* Pagination Bar (Persis seperti Stok Produk) */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 10px);
+}
+.page-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-page {
+  background: var(--bg-hover, #f1f5f9);
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-main);
+  padding: 6px 14px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-page:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn-page:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.page-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 
 /* Product Cards Grid like Stock.vue */

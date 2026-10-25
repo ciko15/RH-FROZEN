@@ -647,12 +647,39 @@ function setShipped(payload) {
     const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'image', 'active'];
     const salesStock = getSheetData('SalesStock');
     const salesStockHeaders = ['sales_id', 'product_id', 'stock', 'updated_at'];
-    const nowStr = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
     const salesId = order.sales_id;
+    // Validasi ketersediaan stok admin sebelum memproses pengiriman
+    const shortageList = [];
+    for (const item of orderItems) {
+      const requestedQty = parseInt(item.qty, 10) || 0;
+      let qtyShipped = requestedQty;
+      if (Array.isArray(customItems) && customItems.length > 0) {
+        const foundCustom = customItems.find(ci =>
+          (ci.id && ci.id === item.id) ||
+          (ci.product_id && ci.product_id === item.product_id)
+        );
+        if (foundCustom !== undefined && foundCustom.qty_shipped !== undefined) {
+          qtyShipped = Math.max(0, parseInt(foundCustom.qty_shipped, 10) || 0);
+        }
+      }
+      const prod = products.find(p => p.id === item.product_id);
+      const currentStock = parseInt(prod ? prod.stock : 0, 10) || 0;
+      if (qtyShipped > currentStock) {
+        shortageList.push((prod ? prod.name : item.name) + ' (stok: ' + currentStock + ', kirim: ' + qtyShipped + ')');
+      }
+    }
+    if (shortageList.length > 0) {
+      return {
+        ok: false,
+        error: 'INSUFFICIENT_STOCK',
+        message: 'Stok admin tidak mencukupi untuk: ' + shortageList.join(', ') + '. Mohon tambahkan stok terlebih dahulu.'
+      };
+    }
 
     // Pastikan kolom qty_shipped ada di OrderItems
     ensureSheetHeader('OrderItems', 'qty_shipped', 7);
     const orderItemHeaders = ['id', 'order_id', 'product_id', 'name', 'qty', 'shortage', 'qty_shipped'];
+    const nowStr = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
 
     for (const item of orderItems) {
       const requestedQty = parseInt(item.qty, 10) || 0;
@@ -714,7 +741,9 @@ function setShipped(payload) {
     }
 
     order.status = 'Dikirim';
-    updateSheetRow('Orders', order._rowIndex, order, ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at']);
+    order.updated_at = nowStr;
+    ensureSheetHeader('Orders', 'updated_at', 12);
+    updateSheetRow('Orders', order._rowIndex, order, ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at']);
 
     writeAuditLog(user_id, 'SET_SHIPPED_STOCK', { order_id, order_no: order.order_no, sales_id: salesId, custom_items: !!customItems });
     return { ok: true, data: order, message: 'Stok berhasil dikirim ke sales' };

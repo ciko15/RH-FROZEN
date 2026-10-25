@@ -78,7 +78,12 @@
       <div v-for="o in filteredOrders" :key="o.id" class="card order-card" @click="selected = o">
         <div class="order-top">
           <span class="order-no"><Icon name="package" size="14" /> {{ o.order_no }}</span>
-          <span class="badge" :class="badgeClass(o.status)">{{ o.status }}</span>
+          <div class="order-badges">
+            <span v-if="o.has_correction" class="badge badge-koreksi" title="Ada penyesuaian jumlah kirim">
+              ⚠️ Ada Koreksi
+            </span>
+            <span class="badge" :class="badgeClass(o.status)">{{ o.status }}</span>
+          </div>
         </div>
         <div class="order-sales">👤 {{ o.sales_name }}</div>
         <div v-if="o.shortage_total > 0 && o.status === 'Proses'" class="shortage">⚠️ Stok admin kurang {{ formatNumber(o.shortage_total) }} pcs ({{ formatNumber(o.shortage_items) }} barang)</div>
@@ -102,11 +107,23 @@
         <div class="sheet-header">
           <div>
             <h3>{{ selected.order_no }}</h3>
-            <span class="badge" :class="badgeClass(selected.status)">{{ selected.status }}</span>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+              <span v-if="selected.has_correction" class="badge badge-koreksi">
+                ⚠️ Ada Koreksi Kirim
+              </span>
+              <span class="badge" :class="badgeClass(selected.status)">{{ selected.status }}</span>
+            </div>
           </div>
           <button class="sheet-close" @click="selected = null"><Icon name="x" size="18" /></button>
         </div>
         <div class="sheet-body">
+          <div v-if="selected.has_correction" class="correction-notice-banner">
+            <Icon name="info" size="16" />
+            <div>
+              <strong>Perhatian: Jumlah Kirim Disesuaikan</strong>
+              <p>Ada selisih antara jumlah barang yang diminta oleh sales dan jumlah yang dikirim oleh admin.</p>
+            </div>
+          </div>
           <div class="info-row"><span>Sales</span><strong>{{ selected.sales_name }}</strong></div>
           <div class="info-row"><span>Tanggal</span><span>{{ selected.order_date }} {{ selected.order_time }}</span></div>
           <div v-if="selected.note" class="info-row"><span>Catatan</span><span>{{ selected.note }}</span></div>
@@ -174,18 +191,47 @@
         <div class="ship-modal-body">
           <div class="ship-guide-banner">
             <Icon name="info" size="18" class="banner-icon" />
-            <div>
+            <div style="flex:1">
               <strong>Sesuaikan Jumlah Kirim:</strong>
-              <p>Anda dapat mengubah jumlah barang yang dikirim jika stok kurang atau ingin mengirim sebagian.</p>
+              <p>Ubah jumlah kirim per barang. Tekan tombol cepat untuk menyesuaikan otomatis.</p>
+              <div class="guide-quick-actions">
+                <button type="button" class="btn-guide-action" @click="setAllToAvailable">
+                  ⚡ Set Semua ke Stok Tersedia
+                </button>
+                <button type="button" class="btn-guide-action" @click="setAllToRequested">
+                  📋 Set Semua ke Permintaan
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Peringatan jika ada barang yang jumlah kirimnya melebihi stok (dibuat compact dan scrollable) -->
+          <div v-if="overStockItems.length > 0" class="stock-warning-alert">
+            <Icon name="alert-triangle" size="20" class="alert-icon" />
+            <div class="alert-text">
+              <div class="alert-header-row">
+                <strong>Peringatan: {{ overStockItems.length }} Barang Melebihi Stok</strong>
+                <button type="button" class="btn-alert-quick-fix" @click="setAllToAvailable">
+                  Sesuaikan ke Stok Max
+                </button>
+              </div>
+              <p>Jumlah yang mau dikirim melebihi stok admin. Kurangi jumlah kirim di bawah atau tambahkan stok terlebih dahulu.</p>
+              <div class="alert-list-scroll">
+                <ul class="alert-list">
+                  <li v-for="si in overStockItems" :key="si.product_id">
+                    <strong>{{ si.product_name }}</strong>: Mau kirim <strong>{{ formatNumber(si.qty_shipped) }}</strong> pcs (Stok admin: <strong>{{ formatNumber(si.admin_stock) }}</strong> pcs, kurang {{ formatNumber(si.qty_shipped - si.admin_stock) }} pcs)
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
 
           <div class="ship-items-list">
-            <div v-for="item in shippingItems" :key="item.product_id" class="ship-item-card">
+            <div v-for="item in shippingItems" :key="item.product_id" class="ship-item-card" :class="{ 'card-overstock': item.qty_shipped > item.admin_stock }">
               <div class="ship-item-header">
                 <div class="ship-item-name">{{ item.product_name }}</div>
                 <div class="ship-item-stock-info">
-                  Stok Admin: <span :class="item.admin_stock < item.qty ? 'text-danger fw-bold' : 'text-success fw-bold'">{{ formatNumber(item.admin_stock) }} pcs</span>
+                  Stok Admin: <span :class="item.admin_stock < item.qty_shipped ? 'text-danger fw-bold' : (item.admin_stock < item.qty ? 'text-warning fw-bold' : 'text-success fw-bold')">{{ formatNumber(item.admin_stock) }} pcs</span>
                 </div>
               </div>
 
@@ -197,7 +243,7 @@
 
                 <div class="ship-input-box">
                   <label class="stat-lbl" :for="'ship-input-' + item.product_id">Jumlah Dikirim</label>
-                  <div class="stepper-wrap">
+                  <div class="stepper-wrap" :class="{ 'stepper-error': item.qty_shipped > item.admin_stock }">
                     <button type="button" class="btn-step" @click="decrementShipQty(item)" :disabled="item.qty_shipped <= 0">−</button>
                     <input
                       :id="'ship-input-' + item.product_id"
@@ -213,16 +259,19 @@
               </div>
 
               <div class="ship-item-footer">
-                <span v-if="item.qty_shipped === item.qty" class="ship-tag tag-equal">Sesuai Permintaan</span>
+                <span v-if="item.qty_shipped > item.admin_stock" class="ship-tag tag-error">
+                  ⚠️ Melebihi Stok Admin (Kurang {{ formatNumber(item.qty_shipped - item.admin_stock) }} pcs)
+                </span>
+                <span v-else-if="item.qty_shipped === item.qty" class="ship-tag tag-equal">Sesuai Permintaan</span>
                 <span v-else-if="item.qty_shipped < item.qty" class="ship-tag tag-less">
-                  Dikirim sebagian (Kurang {{ formatNumber(item.qty - item.qty_shipped) }} pcs)
+                  Dikirim sebagian (Kurang {{ formatNumber(item.qty - item.qty_shipped) }} pcs dari permintaan)
                 </span>
                 <span v-else class="ship-tag tag-more">
                   Kirim lebih (Lebih {{ formatNumber(item.qty_shipped - item.qty) }} pcs)
                 </span>
 
-                <button type="button" class="btn-quick-fill" @click="fillMaxStock(item)" title="Set sesuai stok admin">
-                  Max: {{ formatNumber(item.admin_stock) }}
+                <button type="button" class="btn-quick-fill" @click="fillMaxStock(item)" title="Set sesuai stok admin yang tersedia">
+                  Set Max: {{ formatNumber(item.admin_stock) }}
                 </button>
               </div>
             </div>
@@ -243,12 +292,17 @@
             <button type="button" class="btn-secondary" :disabled="actionLoading" @click="closeShipModal">
               Kembali
             </button>
-            <button type="button" class="btn-action btn-ship confirm-btn" :disabled="actionLoading || totalShippingQty <= 0" @click="submitShipment">
+            <button
+              type="button"
+              class="btn-action btn-ship confirm-btn"
+              :disabled="actionLoading || totalShippingQty <= 0 || overStockItems.length > 0"
+              @click="submitShipment"
+            >
               <Icon name="truck" size="16" />
-              <span>{{ actionLoading ? 'Mengirim...' : 'Kirim Sekarang' }}</span>
+              <span>{{ actionLoading ? 'Mengirim...' : (overStockItems.length > 0 ? 'Stok Tidak Cukup' : 'Kirim Sekarang') }}</span>
             </button>
           </div>
-          <p class="hint">Stok admin akan berkurang {{ formatNumber(totalShippingQty) }} pcs dan langsung masuk ke akun {{ selected?.sales_name }}.</p>
+          <p class="hint">Stok admin akan berkurang {{ formatNumber(totalShippingQty) }} pcs dan langsung diterima oleh {{ selected?.sales_name }}.</p>
         </div>
       </div>
     </div>
@@ -290,6 +344,11 @@ const totalShippingQty = computed(() => {
   return shippingItems.value.reduce((sum, it) => sum + (parseInt(it.qty_shipped, 10) || 0), 0);
 });
 
+// Barang yang jumlah kirimnya melebihi stok admin
+const overStockItems = computed(() => {
+  return shippingItems.value.filter(it => (parseInt(it.qty_shipped, 10) || 0) > (parseInt(it.admin_stock, 10) || 0));
+});
+
 const filteredOrders = computed(() => {
   const q = searchQuery.value.toLowerCase().trim();
   return orders.value
@@ -325,12 +384,13 @@ async function load() {
 
 function openShipModal() {
   if (!selected.value) return;
-  // Siapkan data shipping items dengan default qty_shipped = requested qty (atau stok admin jika kurang)
+  // Siapkan data shipping items
+  // Default qty_shipped diset ke stok admin yang tersedia (maksimal sebesar requested qty)
+  // Jadi admin bisa langsung kirim yang ada atau sesuaikan lagi
   shippingItems.value = (selected.value.items || []).map(it => {
     const reqQty = parseInt(it.qty, 10) || 0;
-    const adminStock = it.admin_stock !== undefined ? parseInt(it.admin_stock, 10) : reqQty;
-    // Default: jika stok admin kurang dari permintaan, otomatis set ke stok admin atau requested
-    const defaultShipped = adminStock >= 0 ? Math.min(reqQty, adminStock) : reqQty;
+    const adminStock = it.admin_stock !== undefined ? parseInt(it.admin_stock, 10) : 0;
+    const defaultQty = Math.min(reqQty, Math.max(0, adminStock));
 
     return {
       id: it.id,
@@ -338,10 +398,22 @@ function openShipModal() {
       product_name: it.product_name || it.name || 'Produk',
       qty: reqQty,
       admin_stock: adminStock,
-      qty_shipped: defaultShipped
+      qty_shipped: defaultQty
     };
   });
   showShipModal.value = true;
+}
+
+function setAllToAvailable() {
+  shippingItems.value.forEach(item => {
+    item.qty_shipped = Math.min(item.qty, Math.max(0, item.admin_stock));
+  });
+}
+
+function setAllToRequested() {
+  shippingItems.value.forEach(item => {
+    item.qty_shipped = item.qty;
+  });
 }
 
 function closeShipModal() {
@@ -379,12 +451,11 @@ async function submitShipment() {
     return;
   }
 
-  // Cek apakah ada barang yang melebihi stok admin
-  const overStock = shippingItems.value.find(it => it.qty_shipped > it.admin_stock);
-  if (overStock) {
-    if (!confirm(`Peringatan: Jumlah kirim ${overStock.product_name} (${overStock.qty_shipped} pcs) melebihi stok admin yang tersedia (${overStock.admin_stock} pcs). Lanjutkan?`)) {
-      return;
-    }
+  // Cek apakah ada barang yang melebihi stok admin - TOLAK SEPENUHNYA
+  if (overStockItems.value.length > 0) {
+    const listNames = overStockItems.value.map(it => `${it.product_name} (stok: ${it.admin_stock}, mau dikirim: ${it.qty_shipped})`).join(', ');
+    appStore.showToast(`Stok tidak mencukupi untuk: ${listNames}. Mohon tambahkan stok terlebih dahulu.`, 'error');
+    return;
   }
 
   actionLoading.value = true;
@@ -679,10 +750,44 @@ onMounted(load);
 .order-sales { margin: 6px 0; font-size: 14px; }
 .order-bottom { font-size: 13px; color: var(--text-muted, #888); }
 .shortage, .text-danger { color: var(--danger, #ef4444); font-size: 12px; }
-.badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.order-badges { display: flex; align-items: center; gap: 6px; }
+.badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .badge-proses { background: rgba(245, 158, 11, .15); color: #d97706; }
 .badge-dikirim { background: rgba(16, 185, 129, .15); color: #059669; }
 .badge-batal { background: rgba(239, 68, 68, .15); color: #dc2626; }
+.badge-koreksi {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.correction-notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  color: #92400e;
+  font-size: 12px;
+}
+.correction-notice-banner strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.correction-notice-banner p {
+  margin: 0;
+  color: #78350f;
+  line-height: 1.4;
+}
+
 .sheet-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: flex; align-items: flex-end; justify-content: center; z-index: 1000; }
 .sheet-content { background: var(--card-bg, #fff); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 18px; }
 .sheet-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
@@ -762,16 +867,38 @@ onMounted(load);
 /* Shipment Confirmation Modal */
 .ship-modal-overlay {
   z-index: 1100;
+  align-items: center !important; /* Centered di desktop/tablet */
+  padding: 16px;
 }
 .ship-modal-content {
-  max-width: 580px;
+  max-width: 620px;
+  max-height: 90vh !important;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px !important;
   padding: 20px;
+  overflow: hidden !important; /* Biarkan modal body yang scroll */
 }
 .ship-modal-sub {
   font-size: 12px;
   color: var(--text-muted, #64748b);
   display: block;
   margin-top: 2px;
+}
+.ship-modal-body {
+  overflow-y: auto !important;
+  max-height: calc(90vh - 120px);
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.ship-modal-body::-webkit-scrollbar {
+  width: 6px;
+  display: block !important;
+}
+.ship-modal-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 6px;
 }
 .ship-guide-banner {
   display: flex;
@@ -783,11 +910,32 @@ onMounted(load);
   padding: 10px 12px;
   font-size: 12px;
   color: #1e40af;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 .ship-guide-banner p {
-  margin: 2px 0 0;
+  margin: 2px 0 6px 0;
   color: #3b82f6;
+}
+.guide-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.btn-guide-action {
+  background: #fff;
+  border: 1px solid #93c5fd;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-guide-action:hover {
+  background: #dbeafe;
+  border-color: #3b82f6;
 }
 .banner-icon {
   flex-shrink: 0;
@@ -795,13 +943,81 @@ onMounted(load);
   margin-top: 1px;
 }
 
+/* Peringatan Stok Kurang Alert */
+.stock-warning-alert {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: #fef2f2;
+  border: 1.5px solid #f87171;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.alert-icon {
+  color: #dc2626;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.alert-text {
+  font-size: 12px;
+  color: #991b1b;
+  flex: 1;
+}
+.alert-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.alert-header-row strong {
+  font-size: 12px;
+  color: #7f1d1d;
+}
+.btn-alert-quick-fix {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-alert-quick-fix:hover {
+  background: #fecaca;
+}
+.alert-text p {
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  color: #b91c1c;
+  line-height: 1.3;
+}
+.alert-list-scroll {
+  max-height: 110px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 6px 8px;
+  scrollbar-width: thin;
+}
+.alert-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  color: #7f1d1d;
+}
+.alert-list li {
+  margin-top: 2px;
+}
+
 .ship-items-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-height: 52vh;
-  overflow-y: auto;
-  padding-right: 4px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 .ship-item-card {
   background: var(--bg-app, #f8fafc);
@@ -811,6 +1027,11 @@ onMounted(load);
   display: flex;
   flex-direction: column;
   gap: 10px;
+  transition: all 0.2s ease;
+}
+.ship-item-card.card-overstock {
+  border: 1.5px solid #ef4444;
+  background: #fff5f5;
 }
 .ship-item-header {
   display: flex;
@@ -876,6 +1097,11 @@ onMounted(load);
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.1);
+  transition: border-color 0.15s;
+}
+.stepper-wrap.stepper-error {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
 }
 .btn-step {
   width: 38px;
@@ -927,6 +1153,12 @@ onMounted(load);
 .tag-equal {
   background: #dcfce7;
   color: #15803d;
+}
+.tag-error {
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 700;
+  border: 1px solid #fca5a5;
 }
 .tag-less {
   background: #fef3c7;

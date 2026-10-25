@@ -19,6 +19,57 @@ export default async function handler(req, res) {
 
     const customItems = Array.isArray(req.body?.items) ? req.body.items : null;
 
+    // Validasi ketersediaan stok admin sebelum memproses pengiriman
+    const { getTabRows, updateRow, appendRow } = await import('../../_lib/sheets.js');
+    const { clearCache } = await import('../../_lib/cache.js');
+
+    const orders = await getTabRows('Orders', true);
+    const order = orders.find(o => o.id === orderId);
+    if (!order) {
+      throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan');
+    }
+    if (order.status !== 'Proses') {
+      throw new ApiError(400, 'INVALID_STATUS', 'Hanya order berstatus Proses yang dapat dikirim');
+    }
+
+    const orderItems = (await getTabRows('OrderItems', true)).filter(oi => oi.order_id === orderId);
+    const products = await getTabRows('Products', true);
+
+    // Cek apakah ada barang yang jumlah kirimnya melebihi stok admin
+    const shortageItems = [];
+    for (const item of orderItems) {
+      const requestedQty = parseInt(item.qty || 0, 10);
+      let qtyShipped = requestedQty;
+
+      if (customItems) {
+        const foundCustom = customItems.find(ci =>
+          (ci.id && ci.id === item.id) ||
+          (ci.product_id && ci.product_id === item.product_id)
+        );
+        if (foundCustom !== undefined && foundCustom.qty_shipped !== undefined) {
+          qtyShipped = Math.max(0, parseInt(foundCustom.qty_shipped, 10) || 0);
+        }
+      }
+
+      const prod = products.find(p => p.id === item.product_id);
+      const currentStock = parseInt(prod?.stock || 0, 10);
+      const prodName = prod ? prod.name : (item.name || item.product_name || 'Produk');
+
+      if (qtyShipped > currentStock) {
+        shortageItems.push({
+          name: prodName,
+          qty_shipped: qtyShipped,
+          stock: currentStock,
+          shortage: qtyShipped - currentStock
+        });
+      }
+    }
+
+    if (shortageItems.length > 0) {
+      const details = shortageItems.map(si => `${si.name} (stok tersedia: ${si.stock}, mau dikirim: ${si.qty_shipped})`).join(', ');
+      throw new ApiError(400, 'INSUFFICIENT_STOCK', `Stok admin tidak mencukupi untuk: ${details}. Mohon tambahkan stok terlebih dahulu.`);
+    }
+
     let updated;
     try {
       updated = await callGas('setShipped', {
@@ -28,15 +79,6 @@ export default async function handler(req, res) {
       });
     } catch (gasErr) {
       console.warn('[GAS SHIP FALLBACK] Memproses pengiriman via Sheets langsung:', gasErr.message);
-      // Fallback langsung ke Google Sheets
-      const { getTabRows, updateRow, appendRow } = await import('../../_lib/sheets.js');
-      const { clearCache } = await import('../../_lib/cache.js');
-
-      const orders = await getTabRows('Orders', true);
-      const order = orders.find(o => o.id === orderId);
-      if (!order) {
-        throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan');
-      }
 
       // Kurangi stok admin dan tambah SalesStock jika order berstatus Proses
       if (order.status === 'Proses') {
@@ -138,7 +180,8 @@ export default async function handler(req, res) {
       }
 
       order.status = 'Dikirim';
-      const headers = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'];
+      order.updated_at = new Date().toISOString();
+      const headers = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at', 'updated_at'];
       await updateRow('Orders', order._rowIndex, order, headers);
       clearCache();
       updated = order;

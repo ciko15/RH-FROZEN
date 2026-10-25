@@ -65,7 +65,7 @@
         :key="cat"
         class="cat-btn"
         :class="{ active: selectedCategory === cat }"
-        @click="selectedCategory = cat"
+        @click="selectCategory(cat)"
       >
         {{ cat }}
       </button>
@@ -86,45 +86,46 @@
           class="card stock-card"
           :class="{ 'card-low': p.is_low_stock }"
         >
-          <div class="stock-left">
-            <div class="prod-thumb">
-              <img
-                v-if="isValidImage(p.image)"
-                :src="p.image"
-                :alt="p.name"
-                class="prod-img"
-                @error="onImgError(p)"
-              />
-              <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
-            </div>
-            <div class="stock-details">
-              <span class="prod-name">{{ p.name }}</span>
-              <small class="prod-cat">{{ p.category }}</small>
-              <div class="price-row">
-                <span class="price-val">Rp {{ formatNumber(p.price) }}</span>
-                <span v-if="p.cost_price" class="cost-price">Beli: Rp {{ formatNumber(p.cost_price) }}</span>
+          <!-- Bagian Atas Card: Foto, Nama, Kategori, Harga & Badge Stok -->
+          <div class="stock-card-top">
+            <div class="stock-left">
+              <div class="prod-thumb">
+                <img
+                  v-if="isValidImage(p.image)"
+                  :src="p.image"
+                  :alt="p.name"
+                  class="prod-img"
+                  @error="onImgError(p)"
+                />
+                <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
               </div>
+              <div class="stock-details">
+                <span class="prod-name" :title="p.name">{{ p.name }}</span>
+                <small class="prod-cat">{{ p.category }}</small>
+                <div class="price-row">
+                  <span class="price-val">Rp {{ formatNumber(p.price) }}</span>
+                  <span v-if="p.cost_price" class="cost-price">Beli: Rp {{ formatNumber(p.cost_price) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Badge Stok di pojok kanan atas -->
+            <div class="stock-badge-pill" :class="p.is_low_stock ? 'badge-low' : 'badge-safe'">
+              <span class="stock-pill-lbl">Stok</span>
+              <strong class="stock-pill-val">{{ formatNumber(p.stock) }}</strong>
             </div>
           </div>
 
-          <div class="stock-right">
-            <div class="stock-qty-box">
-              <span class="stock-label">Stok</span>
-              <span
-                class="stock-badge"
-                :class="p.is_low_stock ? 'badge-low' : 'badge-safe'"
-              >
-                {{ formatNumber(p.stock) }}
-              </span>
-            </div>
-            <div class="stock-actions-btn" v-if="canManageStock">
+          <!-- Bagian Bawah Card: Tombol Aksi (+ Stok, Edit, Koreksi) -->
+          <div class="stock-card-bottom" v-if="canManageStock">
+            <div class="stock-actions-btn">
               <button
                 class="stock-btn btn-add-stock"
                 @click="openAddStockModal(p)"
                 title="Tambah Stok Masuk (+)"
               >
                 <Icon name="plus" size="13" />
-                <span>Stok</span>
+                <span>+ Stok</span>
               </button>
               <button
                 class="stock-btn btn-edit"
@@ -160,7 +161,7 @@
           >
             &laquo; Sebelumnya
           </button>
-          <span class="page-num">Hal {{ stockCurrentPage }} / {{ stockTotalPages }}</span>
+          <span class="page-num">Hal {{ formatNumber(stockCurrentPage) }} / {{ formatNumber(stockTotalPages) }}</span>
           <button
             class="btn-page"
             :disabled="stockCurrentPage === stockTotalPages"
@@ -490,6 +491,15 @@ const selectedCategory = ref('Semua');
 // Filter & Pagination Stok Barang (10 per halaman)
 const stockCurrentPage = ref(1);
 const stockPageSize = ref(10);
+
+function selectCategory(cat) {
+  selectedCategory.value = cat;
+  stockCurrentPage.value = 1;
+}
+
+watch(searchQuery, () => {
+  stockCurrentPage.value = 1;
+});
 
 const filteredProducts = computed(() => {
   let list = products.value;
@@ -975,81 +985,43 @@ onMounted(() => {
 }
 .stock-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
 }
 .stock-card {
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+  gap: 14px;
   margin-bottom: 0;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-card, 12px);
-  padding: 14px;
+  border-radius: var(--radius-card, 14px);
+  padding: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .stock-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
   border-color: #cbd5e1;
 }
 .card-low {
   border-left: 4px solid var(--danger);
 }
 
-/* Pagination Bar */
-.pagination-bar {
+/* Card Top Row */
+.stock-card-top {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 12px;
-  margin-top: 18px;
-  padding: 12px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-card, 10px);
-}
-.page-info {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-.page-buttons {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.btn-page {
-  background: var(--bg-hover, #f1f5f9);
-  border: 1px solid var(--border-color, #cbd5e1);
-  color: var(--text-main);
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.btn-page:hover:not(:disabled) {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-}
-.btn-page:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.page-num {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-main);
 }
 .stock-left {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
+  flex: 1;
+  min-width: 0;
 }
 .stock-emoji {
   font-size: 26px;
@@ -1057,64 +1029,92 @@ onMounted(() => {
 .stock-details {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  gap: 3px;
 }
 .prod-name {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 14.5px;
+  color: var(--text-main);
+  line-height: 1.35;
+  word-break: break-word;
 }
 .prod-cat {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-muted);
 }
 .price-row {
   display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 .price-val {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 800;
   color: var(--primary);
 }
 .cost-price {
   font-size: 11px;
   color: var(--text-light);
 }
-.stock-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+
+/* Badge Stok Pill di kanan atas */
+.stock-badge-pill {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.stock-badge {
-  font-size: 18px;
+.stock-pill-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.8;
+}
+.stock-pill-val {
+  font-size: 16px;
   font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 6px;
 }
 .badge-safe {
   background: #dcfce7;
   color: #15803d;
+  border: 1px solid rgba(21, 128, 61, 0.2);
 }
 .badge-low {
   background: #fee2e2;
   color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+/* Card Bottom Row: Action Buttons */
+.stock-card-bottom {
+  border-top: 1px dashed var(--border-color);
+  padding-top: 12px;
 }
 .stock-actions-btn {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
+  width: 100%;
 }
 .stock-btn {
+  flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  font-size: 11.5px;
+  gap: 6px;
+  font-size: 12px;
   font-weight: 600;
-  height: 30px;
+  height: 34px;
   padding: 0 10px;
-  border-radius: 7px;
+  border-radius: 8px;
   cursor: pointer;
   white-space: nowrap;
   border: 1px solid transparent;
@@ -1375,28 +1375,67 @@ onMounted(() => {
     flex: 0.8;
     justify-content: center;
   }
-  .stock-card {
-    flex-direction: column;
-    align-items: stretch;
+  .stock-list {
+    grid-template-columns: 1fr;
     gap: 12px;
   }
-  .stock-right {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    border-top: 1px dashed var(--border-color);
-    padding-top: 10px;
-    width: 100%;
-  }
-  .stock-actions-btn {
-    flex: 1;
-    justify-content: flex-end;
+  .stock-card {
+    padding: 14px;
+    gap: 12px;
   }
   .stock-btn {
-    flex: 1;
-    max-width: 90px;
     padding: 0 6px;
-    font-size: 11px;
+    font-size: 11.5px;
+    height: 32px;
   }
+}
+
+/* Pagination Bar (Konsisten dengan halaman lain) */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-card, 12px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.page-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-page {
+  background: var(--bg-hover, #f1f5f9);
+  border: 1px solid var(--border-color, #cbd5e1);
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-page:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn-page:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.page-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 </style>
