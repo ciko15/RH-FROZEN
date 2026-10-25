@@ -56,19 +56,28 @@ export default async function handler(req, res) {
         const sales = users.find(u => u.id === o.sales_id);
         const items = orderItems.filter(oi => oi.order_id === o.id).map(oi => {
           const prod = products.find(p => p.id === oi.product_id);
+          const requestedQty = parseInt(oi.qty, 10) || 0;
+          const shippedQty = oi.qty_shipped !== undefined && oi.qty_shipped !== '' && oi.qty_shipped !== null
+            ? (parseInt(oi.qty_shipped, 10) || 0)
+            : (o.status === 'Dikirim' ? requestedQty : null);
           return {
             ...oi,
             product_name: prod ? prod.name : oi.name,
+            admin_stock: parseInt(prod?.stock || 0, 10),
+            qty: requestedQty,
+            qty_shipped: shippedQty,
             shortage: parseInt(oi.shortage, 10) || 0
           };
         });
         const totalQty = items.reduce((sum, it) => sum + (parseInt(it.qty, 10) || 0), 0);
+        const totalShippedQty = items.reduce((sum, it) => sum + (it.qty_shipped !== null ? it.qty_shipped : 0), 0);
         const shortageTotal = items.reduce((sum, it) => sum + (it.shortage || 0), 0);
 
         return {
           ...o,
           sales_name: sales ? sales.full_name : '-',
           total_qty: totalQty,
+          total_qty_shipped: o.status === 'Dikirim' ? totalShippedQty : null,
           items_count: items.length,
           shortage_total: shortageTotal,
           shortage_items: items.filter(it => it.shortage > 0).length,

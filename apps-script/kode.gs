@@ -634,7 +634,7 @@ function setShipped(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const { order_id, user_id } = payload;
+    const { order_id, user_id, items: customItems } = payload;
     const orders = getSheetData('Orders');
     const order = orders.find(o => o.id === order_id);
     if (!order) return { ok: false, error: 'NOT_FOUND', message: 'Order tidak ditemukan' };
@@ -650,43 +650,64 @@ function setShipped(payload) {
     const nowStr = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
     const salesId = order.sales_id;
 
-    for (const item of orderItems) {
-      const qty = parseInt(item.qty, 10) || 0;
+    // Pastikan kolom qty_shipped ada di OrderItems
+    ensureSheetHeader('OrderItems', 'qty_shipped', 7);
+    const orderItemHeaders = ['id', 'order_id', 'product_id', 'name', 'qty', 'shortage', 'qty_shipped'];
 
-      // 1. Kurangi stok admin/gudang
+    for (const item of orderItems) {
+      const requestedQty = parseInt(item.qty, 10) || 0;
+      let qtyShipped = requestedQty;
+
+      if (Array.isArray(customItems) && customItems.length > 0) {
+        const foundCustom = customItems.find(ci =>
+          (ci.id && ci.id === item.id) ||
+          (ci.product_id && ci.product_id === item.product_id)
+        );
+        if (foundCustom !== undefined && foundCustom.qty_shipped !== undefined) {
+          qtyShipped = Math.max(0, parseInt(foundCustom.qty_shipped, 10) || 0);
+        }
+      }
+
+      // Update OrderItem with qty_shipped
+      item.qty_shipped = qtyShipped;
+      if (item._rowIndex) {
+        updateSheetRow('OrderItems', item._rowIndex, item, orderItemHeaders);
+      }
+
+      // 1. Kurangi stok admin/gudang sesuai qtyShipped
       const prod = products.find(p => p.id === item.product_id);
       if (prod) {
-        const newAdminStock = Math.max(0, (parseInt(prod.stock, 10) || 0) - qty);
+        const newAdminStock = Math.max(0, (parseInt(prod.stock, 10) || 0) - qtyShipped);
         prod.stock = newAdminStock;
         updateSheetRow('Products', prod._rowIndex, prod, prodHeaders);
 
         appendSheetRow('StockMovements', {
           id: Utilities.getUuid(), date_time: nowStr, product_id: prod.id,
-          change: -qty, reason: 'Kirim ke Sales', ref: order.order_no,
+          change: -qtyShipped, reason: 'Kirim ke Sales', ref: order.order_no,
           balance_after: newAdminStock, user_id: user_id, stock_type: 'ADMIN'
         }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
       }
 
-      // 2. Tambah stok sales
+      // 2. Tambah stok sales sesuai qtyShipped
       const ssRow = salesStock.find(s => s.sales_id === salesId && s.product_id === item.product_id);
       if (ssRow) {
-        const newSalesStock = (parseInt(ssRow.stock, 10) || 0) + qty;
+        const newSalesStock = (parseInt(ssRow.stock, 10) || 0) + qtyShipped;
         ssRow.stock = newSalesStock;
         ssRow.updated_at = nowStr;
         updateSheetRow('SalesStock', ssRow._rowIndex, ssRow, salesStockHeaders);
         appendSheetRow('StockMovements', {
           id: Utilities.getUuid(), date_time: nowStr, product_id: item.product_id,
-          change: qty, reason: 'Terima dari Admin', ref: order.order_no,
+          change: qtyShipped, reason: 'Terima dari Admin', ref: order.order_no,
           balance_after: newSalesStock, user_id: salesId, stock_type: 'SALES'
         }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
       } else {
-        const newSalesStock = qty;
+        const newSalesStock = qtyShipped;
         appendSheetRow('SalesStock', {
           sales_id: salesId, product_id: item.product_id, stock: newSalesStock, updated_at: nowStr
         }, salesStockHeaders);
         appendSheetRow('StockMovements', {
           id: Utilities.getUuid(), date_time: nowStr, product_id: item.product_id,
-          change: qty, reason: 'Terima dari Admin (baru)', ref: order.order_no,
+          change: qtyShipped, reason: 'Terima dari Admin (baru)', ref: order.order_no,
           balance_after: newSalesStock, user_id: salesId, stock_type: 'SALES'
         }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
       }
@@ -695,7 +716,7 @@ function setShipped(payload) {
     order.status = 'Dikirim';
     updateSheetRow('Orders', order._rowIndex, order, ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at']);
 
-    writeAuditLog(user_id, 'SET_SHIPPED_STOCK', { order_id, order_no: order.order_no, sales_id: salesId });
+    writeAuditLog(user_id, 'SET_SHIPPED_STOCK', { order_id, order_no: order.order_no, sales_id: salesId, custom_items: !!customItems });
     return { ok: true, data: order, message: 'Stok berhasil dikirim ke sales' };
   } finally {
     lock.releaseLock();

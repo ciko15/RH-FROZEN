@@ -48,20 +48,34 @@ export default async function handler(req, res) {
       const customer = (tabs.Customers || []).find(c => c.id === order.customer_id);
       const sales = (tabs.Users || []).find(u => u.id === order.sales_id);
 
+      const mappedItems = items.map(it => {
+        const prod = (tabs.Products || []).find(p => p.id === it.product_id);
+        const requestedQty = parseInt(it.qty, 10) || 0;
+        const shippedQty = it.qty_shipped !== undefined && it.qty_shipped !== '' && it.qty_shipped !== null
+          ? (parseInt(it.qty_shipped, 10) || 0)
+          : (order.status === 'Dikirim' ? requestedQty : null);
+        return {
+          ...it,
+          emoji: prod ? prod.emoji : '📦',
+          admin_stock: parseInt(prod?.stock || 0, 10),
+          qty: requestedQty,
+          qty_shipped: shippedQty,
+          shortage: parseInt(it.shortage, 10) || 0,
+          line_total: (requestedQty * parseFloat(it.price || 0)) - parseFloat(it.discount || 0)
+        };
+      });
+
+      const totalQty = mappedItems.reduce((sum, it) => sum + it.qty, 0);
+      const totalShippedQty = mappedItems.reduce((sum, it) => sum + (it.qty_shipped !== null ? it.qty_shipped : 0), 0);
+
       const enriched = {
         ...order,
         customer,
         customer_phone: customer ? customer.phone : '',
         sales_name: sales ? sales.full_name : '-',
-        items: items.map(it => {
-          const prod = (tabs.Products || []).find(p => p.id === it.product_id);
-          return {
-            ...it,
-            emoji: prod ? prod.emoji : '📦',
-            shortage: parseInt(it.shortage, 10) || 0,
-            line_total: (parseInt(it.qty, 10) * parseFloat(it.price)) - parseFloat(it.discount || 0)
-          };
-        })
+        total_qty: totalQty,
+        total_qty_shipped: order.status === 'Dikirim' ? totalShippedQty : null,
+        items: mappedItems
       };
 
       return res.status(200).json({

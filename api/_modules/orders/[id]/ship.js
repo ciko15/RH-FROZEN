@@ -17,11 +17,14 @@ export default async function handler(req, res) {
       throw new ApiError(400, 'BAD_REQUEST', 'ID Order wajib disertakan');
     }
 
+    const customItems = Array.isArray(req.body?.items) ? req.body.items : null;
+
     let updated;
     try {
       updated = await callGas('setShipped', {
         order_id: orderId,
-        user_id: authUser.id
+        user_id: authUser.id,
+        items: customItems
       });
     } catch (gasErr) {
       console.warn('[GAS SHIP FALLBACK] Memproses pengiriman via Sheets langsung:', gasErr.message);
@@ -42,17 +45,36 @@ export default async function handler(req, res) {
         const prodHeaders = ['id', 'name', 'category', 'price', 'cost_price', 'stock', 'emoji', 'image', 'active'];
         const salesStocks = await getTabRows('SalesStock', true);
         const salesStockHeaders = ['sales_id', 'product_id', 'stock', 'updated_at'];
+        const orderItemHeaders = ['id', 'order_id', 'product_id', 'name', 'qty', 'shortage', 'qty_shipped'];
         const nowIso = new Date().toISOString().replace('T', ' ').substring(0, 19);
         const salesId = order.sales_id;
 
         for (const item of orderItems) {
-          const qty = parseInt(item.qty || 0, 10);
+          const requestedQty = parseInt(item.qty || 0, 10);
+          let qtyShipped = requestedQty;
+
+          if (customItems) {
+            const foundCustom = customItems.find(ci =>
+              (ci.id && ci.id === item.id) ||
+              (ci.product_id && ci.product_id === item.product_id)
+            );
+            if (foundCustom !== undefined && foundCustom.qty_shipped !== undefined) {
+              qtyShipped = Math.max(0, parseInt(foundCustom.qty_shipped, 10) || 0);
+            }
+          }
+
+          // Update qty_shipped on OrderItems row
+          item.qty_shipped = qtyShipped;
+          if (item._rowIndex) {
+            await updateRow('OrderItems', item._rowIndex, item, orderItemHeaders);
+          }
+
           const prod = products.find(p => p.id === item.product_id);
 
-          // 1. Kurangi stok admin
+          // 1. Kurangi stok admin sesuai qtyShipped
           if (prod && prod._rowIndex) {
             const currentStock = parseInt(prod.stock || 0, 10);
-            const newStock = Math.max(0, currentStock - qty);
+            const newStock = Math.max(0, currentStock - qtyShipped);
             prod.stock = newStock;
             await updateRow('Products', prod._rowIndex, prod, prodHeaders);
 
@@ -60,7 +82,7 @@ export default async function handler(req, res) {
               id: crypto.randomUUID(),
               date_time: nowIso,
               product_id: prod.id,
-              change: -qty,
+              change: -qtyShipped,
               reason: 'Kirim ke Sales',
               ref: order.order_no || order.id,
               balance_after: newStock,
@@ -69,12 +91,12 @@ export default async function handler(req, res) {
             }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
           }
 
-          // 2. Tambah stok sales
+          // 2. Tambah stok sales sesuai qtyShipped
           if (salesId) {
             const ssRow = salesStocks.find(s => s.sales_id === salesId && s.product_id === item.product_id);
             if (ssRow && ssRow._rowIndex) {
               const currentSalesStock = parseInt(ssRow.stock || 0, 10);
-              const newSalesStock = currentSalesStock + qty;
+              const newSalesStock = currentSalesStock + qtyShipped;
               ssRow.stock = newSalesStock;
               ssRow.updated_at = nowIso;
               await updateRow('SalesStock', ssRow._rowIndex, ssRow, salesStockHeaders);
@@ -83,7 +105,7 @@ export default async function handler(req, res) {
                 id: crypto.randomUUID(),
                 date_time: nowIso,
                 product_id: item.product_id,
-                change: qty,
+                change: qtyShipped,
                 reason: 'Terima dari Admin',
                 ref: order.order_no || order.id,
                 balance_after: newSalesStock,
@@ -91,7 +113,7 @@ export default async function handler(req, res) {
                 stock_type: 'SALES'
               }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
             } else {
-              const newSalesStock = qty;
+              const newSalesStock = qtyShipped;
               await appendRow('SalesStock', {
                 sales_id: salesId,
                 product_id: item.product_id,
@@ -103,7 +125,7 @@ export default async function handler(req, res) {
                 id: crypto.randomUUID(),
                 date_time: nowIso,
                 product_id: item.product_id,
-                change: qty,
+                change: qtyShipped,
                 reason: 'Terima dari Admin',
                 ref: order.order_no || order.id,
                 balance_after: newSalesStock,
