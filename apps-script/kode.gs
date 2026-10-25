@@ -1048,8 +1048,43 @@ function createReturn(payload) {
       }, ['id', 'return_id', 'product_id', 'name', 'qty', 'price']);
     }
 
-    writeAuditLog(user_id, 'CREATE_RETURN_REQUEST', { return_no: returnNo, invoice_id, total_qty });
-    return { ok: true, data: newReturn, message: 'Permintaan retur berhasil dibuat, menunggu persetujuan admin' };
+    // Penyesuaian Finansial: Potong sisa bon / piutang, dan kembalikan kas tunai (uang keluar)
+    const totalAmount = validatedReturnItems.reduce((s, it) => s + (it.qty * it.price), 0);
+    const invoiceRemaining = parseFloat(invoice.remaining || 0);
+    const debtDeduction = Math.min(Math.max(0, invoiceRemaining), totalAmount);
+    const cashRefund = Math.max(0, totalAmount - debtDeduction);
+
+    if (debtDeduction > 0) {
+      invoice.remaining = Math.max(0, invoiceRemaining - debtDeduction);
+      updateSheetRow('Invoices', invoice._rowIndex, invoice, ['id', 'invoice_no', 'tx_date', 'tx_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by']);
+
+      const customers = getSheetData('Customers');
+      const customer = customers.find(c => c.id === invoice.customer_id);
+      if (customer) {
+        const curBal = parseFloat(customer.balance || 0);
+        customer.balance = Math.max(0, curBal - debtDeduction);
+        updateSheetRow('Customers', customer._rowIndex, customer, ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active']);
+      }
+    }
+
+    if (cashRefund > 0) {
+      const timeStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'HH:mm:ss');
+      appendSheetRow('Payments', {
+        id: Utilities.getUuid(),
+        payment_date: dateStr,
+        payment_time: timeStr,
+        customer_id: invoice.customer_id,
+        invoice_id: invoice.id,
+        type: 'Pengeluaran',
+        amount: cashRefund,
+        method: 'Tunai',
+        note: `Retur #${returnNo} (${invoice.invoice_no})`,
+        created_by: user_id
+      }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
+    }
+
+    writeAuditLog(user_id, 'CREATE_RETURN_REQUEST', { return_no: returnNo, invoice_id, total_qty, total_amount: totalAmount, debt_deduction: debtDeduction, cash_refund: cashRefund });
+    return { ok: true, data: { ...newReturn, total_amount: totalAmount, debt_deduction: debtDeduction, cash_refund: cashRefund }, message: 'Permintaan retur berhasil dibuat, penyesuaian keuangan telah dicatat' };
   } finally {
     lock.releaseLock();
   }

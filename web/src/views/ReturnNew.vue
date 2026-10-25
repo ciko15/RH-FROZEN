@@ -82,7 +82,22 @@
         <span>Total Nilai Retur:</span>
         <strong class="total-val text-danger">Rp {{ formatNumber(totalReturnValue) }}</strong>
       </div>
-      <small class="note-sub">* Nilai retur otomatis memotong saldo bon pelanggan atau dicatat sebagai pengembalian dana.</small>
+
+      <!-- Rincian Penyesuaian Finansial (Potong Bon & Pengembalian Uang Tunai) -->
+      <div v-if="totalReturnValue > 0" class="refund-breakdown">
+        <div class="breakdown-row" v-if="estDebtDeduction > 0">
+          <span>Potong Bon/Hutang Faktur (Sisa Bon: Rp {{ formatNumber(invoiceRemaining) }}):</span>
+          <span class="text-warning">- Rp {{ formatNumber(estDebtDeduction) }}</span>
+        </div>
+        <div class="breakdown-row highlight" v-if="estCashRefund > 0">
+          <span><strong>Uang Kembali ke Pelanggan (Kas Keluar):</strong></span>
+          <strong class="text-success">Rp {{ formatNumber(estCashRefund) }}</strong>
+        </div>
+        <div v-else class="breakdown-row">
+          <small class="text-muted">Semua nilai retur dialokasikan untuk melunasi sisa tagihan/bon pelanggan.</small>
+        </div>
+      </div>
+      <small class="note-sub">* Nilai retur otomatis memotong sisa hutang/bon faktur dan jika ada sisa dicatat otomatis sebagai uang kas keluar.</small>
 
       <button
         class="btn-submit-return"
@@ -141,6 +156,18 @@ const totalReturnValue = computed(() => {
     const q = it.return_qty || 0;
     return sum + (q * it.net_unit_price);
   }, 0);
+});
+
+const invoiceRemaining = computed(() => {
+  return parseFloat(invoice.value?.remaining || 0);
+});
+
+const estDebtDeduction = computed(() => {
+  return Math.min(Math.max(0, invoiceRemaining.value), totalReturnValue.value);
+});
+
+const estCashRefund = computed(() => {
+  return Math.max(0, totalReturnValue.value - estDebtDeduction.value);
 });
 
 // Format objek Nota Retur agar persis seperti invoice biasa namun berstatus RETUR
@@ -452,6 +479,27 @@ onMounted(() => {
   color: var(--text-muted);
   margin-bottom: 10px;
   display: block;
+}
+.refund-breakdown {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: var(--bg-app);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.breakdown-row.highlight {
+  border-top: 1px dashed var(--border-color);
+  padding-top: 6px;
+  margin-top: 2px;
 }
 .btn-submit-return {
   background: var(--danger);

@@ -43,7 +43,12 @@
           <div class="ret-reason">Alasan: "{{ r.reason || '-' }}"</div>
           <div class="ret-bottom">
             <span>{{ r.date }}</span>
-            <strong>{{ formatNumber(r.total_qty) }} pcs barang</strong>
+            <div style="text-align: right;">
+              <div><strong>{{ formatNumber(r.total_qty) }} pcs barang</strong></div>
+              <div v-if="r.total_amount" style="font-size: 12px; color: var(--danger, #dc2626); font-weight: 700;">
+                Rp {{ formatNumber(r.total_amount) }}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -68,7 +73,7 @@
           <div v-for="it in invoiceItems" :key="it.product_id" class="ret-item-row">
             <div class="it-name-col">
               <strong>{{ it.name }}</strong>
-              <small class="text-muted">Dibeli: {{ formatNumber(it.qty) }} pcs</small>
+              <small class="text-muted">Dibeli: {{ formatNumber(it.qty) }} pcs · @Rp {{ formatNumber(it.price) }}</small>
             </div>
             <div class="qty-stepper">
               <button type="button" @click="decRetQty(it)">−</button>
@@ -83,6 +88,22 @@
           <input v-model="returnReason" type="text" placeholder="Contoh: Barang cacat dari pabrik / rusak" />
         </div>
 
+        <!-- Estimasi Keuangan Retur -->
+        <div v-if="createTotalReturnValue > 0" class="create-refund-box">
+          <div class="cr-row">
+            <span>Total Nilai Retur:</span>
+            <strong class="text-danger">Rp {{ formatNumber(createTotalReturnValue) }}</strong>
+          </div>
+          <div v-if="createDebtDeduction > 0" class="cr-row">
+            <span>Potong Bon Faktur (Sisa Bon: Rp {{ formatNumber(createInvoiceRemaining) }}):</span>
+            <span class="text-warning">- Rp {{ formatNumber(createDebtDeduction) }}</span>
+          </div>
+          <div v-if="createCashRefund > 0" class="cr-row highlight">
+            <span><strong>Uang Kembali (Kas Keluar):</strong></span>
+            <strong class="text-success">Rp {{ formatNumber(createCashRefund) }}</strong>
+          </div>
+        </div>
+
         <button
           class="btn-submit"
           :disabled="submitting || totalSelectedQty <= 0 || !returnReason"
@@ -91,7 +112,7 @@
           <Icon name="check" size="18" />
           <span>{{ submitting ? 'Mengirim Pengajuan...' : `Ajukan Retur (${totalSelectedQty} pcs) ke Admin` }}</span>
         </button>
-        <p class="hint">Catatan: Stok Anda belum berkurang sampai admin menyetujui pengajuan ini.</p>
+        <p class="hint">Catatan: Stok sales & pengembalian uang/potong bon dicatat otomatis. Stok gudang bertambah saat admin menyetujui.</p>
       </div>
     </div>
 
@@ -110,6 +131,7 @@
           <div class="info-row"><span>Sales</span><strong>{{ selectedReturn.sales_name }}</strong></div>
           <div class="info-row"><span>Tanggal Pengajuan</span><span>{{ selectedReturn.date }}</span></div>
           <div class="info-row"><span>Invoice Asal</span><span>#{{ selectedReturn.invoice_no || '-' }}</span></div>
+          <div class="info-row"><span>Pelanggan</span><span>{{ selectedReturn.customer_name || '-' }}</span></div>
           <div class="info-row"><span>Alasan</span><span class="text-muted">{{ selectedReturn.reason }}</span></div>
           <div v-if="selectedReturn.approved_by_name" class="info-row">
             <span>Disetujui Oleh</span><strong>{{ selectedReturn.approved_by_name }}</strong>
@@ -117,11 +139,20 @@
 
           <h4 style="margin: 14px 0 6px;">Barang yang Diretur</h4>
           <div v-for="it in selectedReturn.items" :key="it.id || it.product_id" class="info-row" style="border-bottom: 1px dashed var(--border, #eee); padding: 6px 0;">
-            <span>{{ it.name }}</span>
-            <strong>{{ formatNumber(it.qty) }} pcs</strong>
+            <div>
+              <span>{{ it.name }}</span>
+              <div v-if="it.price" style="font-size: 11px; color: var(--text-muted, #888);">@Rp {{ formatNumber(it.price) }}</div>
+            </div>
+            <div style="text-align: right;">
+              <strong>{{ formatNumber(it.qty) }} pcs</strong>
+              <div v-if="it.price" style="font-size: 11px; color: var(--text-muted, #888);">Rp {{ formatNumber(it.qty * it.price) }}</div>
+            </div>
           </div>
           <div class="info-row total" style="margin-top: 8px;">
             <span>Total Barang</span><strong>{{ formatNumber(selectedReturn.total_qty) }} pcs</strong>
+          </div>
+          <div v-if="selectedReturn.total_amount" class="info-row" style="font-weight: 700; color: var(--danger, #dc2626);">
+            <span>Total Nilai Retur</span><strong>Rp {{ formatNumber(selectedReturn.total_amount) }}</strong>
           </div>
 
           <!-- Aksi Admin: Setujui / Tolak -->
@@ -181,6 +212,26 @@ const filteredReturns = computed(() => {
 });
 
 const totalSelectedQty = computed(() => invoiceItems.value.reduce((s, it) => s + (parseInt(it.return_qty, 10) || 0), 0));
+
+const createTotalReturnValue = computed(() => {
+  return invoiceItems.value.reduce((s, it) => {
+    const q = parseInt(it.return_qty, 10) || 0;
+    const price = parseFloat(it.price || 0);
+    return s + (q * price);
+  }, 0);
+});
+
+const createInvoiceRemaining = computed(() => {
+  return parseFloat(selectedInvoice.value?.remaining || 0);
+});
+
+const createDebtDeduction = computed(() => {
+  return Math.min(Math.max(0, createInvoiceRemaining.value), createTotalReturnValue.value);
+});
+
+const createCashRefund = computed(() => {
+  return Math.max(0, createTotalReturnValue.value - createDebtDeduction.value);
+});
 
 function badgeClass(st) {
   if (st === 'Disetujui') return 'badge-disetujui';
@@ -312,6 +363,27 @@ onMounted(() => {
 .qty-stepper { display: flex; align-items: center; gap: 4px; }
 .qty-stepper button { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border, #ddd); background: transparent; cursor: pointer; }
 .qty-stepper input { width: 44px; text-align: center; }
+.create-refund-box {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.02);
+  border: 1px solid var(--border, #eee);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.cr-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cr-row.highlight {
+  border-top: 1px dashed var(--border, #eee);
+  padding-top: 6px;
+  margin-top: 2px;
+}
 .btn-submit { width: 100%; margin-top: 14px; padding: 14px; border: none; border-radius: 12px; background: linear-gradient(135deg, var(--primary, #2563eb), #4f46e5); color: #fff; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
 .hint { font-size: 12px; color: var(--text-muted, #888); margin-top: 8px; text-align: center; }
