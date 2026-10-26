@@ -157,10 +157,13 @@
 
           <div class="sr-grid">
             <div class="sr-box box-income">
-              <span class="sr-box-label">Uang Diterima Customer</span>
-              <strong class="sr-box-val text-success">Rp {{ formatNumber(sp.cash_received) }}</strong>
+              <span class="sr-box-label">Uang Fisik / Setoran Bersih</span>
+              <strong class="sr-box-val text-success">Rp {{ formatNumber(sp.net_cash) }}</strong>
               <small v-if="sp.refund_amount > 0" class="sr-box-sub text-danger">
-                Retur: -Rp {{ formatNumber(sp.refund_amount) }}
+                (Diterima: Rp {{ formatNumber(sp.cash_received) }} - Retur: Rp {{ formatNumber(sp.refund_amount) }})
+              </small>
+              <small v-else class="sr-box-sub text-muted">
+                Total uang masuk hari ini
               </small>
             </div>
             <div class="sr-box box-omset">
