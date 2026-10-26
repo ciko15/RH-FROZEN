@@ -43,9 +43,12 @@
     <!-- 4 Kartu Metrik Warna-Warni Sesuai Bagian 9.10 -->
     <div class="stats-grid">
       <div class="stat-card green">
-        <span class="label">Penjualan Periode</span>
+        <span class="label">Penjualan Bersih</span>
         <span class="val">Rp {{ formatNumber(summary.total_sales) }}</span>
-        <span class="sub">Total Nilai Faktur</span>
+        <span v-if="summary.total_returns > 0" class="sub" style="color: #b91c1c;">
+          (Kotor: Rp {{ formatNumber(summary.gross_sales) }} - Retur: Rp {{ formatNumber(summary.total_returns) }})
+        </span>
+        <span v-else class="sub">Total Nilai Faktur Bersih</span>
       </div>
 
       <div class="stat-card blue">
@@ -130,9 +133,15 @@
       <div class="card-title-head">
         <div class="card-title">
           <Icon name="sales" size="18" />
-          <span>Rekap Uang Diterima & Penjualan Per Sales ({{ filterPeriod }})</span>
+          <span>Rekap Uang Diterima & Penjualan Per Sales</span>
         </div>
-        <span class="sales-count-badge">{{ salesPerformance.length }} Sales</span>
+        <div class="sales-head-controls">
+          <div class="sales-date-input-wrap">
+            <span class="date-lbl">Tanggal:</span>
+            <input v-model="filterDate" type="date" class="sales-quick-date" @change="fetchReports" />
+          </div>
+          <span class="sales-count-badge">{{ salesPerformance.length }} Sales</span>
+        </div>
       </div>
 
       <div class="sales-cards-list">
@@ -140,7 +149,7 @@
           v-for="sp in salesPerformance"
           :key="sp.sales_id"
           class="sales-row-card"
-          :class="{ 'has-income': sp.cash_received > 0 }"
+          :class="{ 'has-income': sp.net_cash > 0 }"
         >
           <div class="sr-header">
             <div class="sr-identity">
@@ -156,25 +165,61 @@
           </div>
 
           <div class="sr-grid">
+            <!-- Komponen Utama yang Diminta Admin: Uang yang Dibayarkan ke Sales -->
             <div class="sr-box box-income">
-              <span class="sr-box-label">Uang Fisik / Setoran Bersih</span>
-              <strong class="sr-box-val text-success">Rp {{ formatNumber(sp.net_cash) }}</strong>
-              <small v-if="sp.refund_amount > 0" class="sr-box-sub text-danger">
-                (Diterima: Rp {{ formatNumber(sp.cash_received) }} - Retur: Rp {{ formatNumber(sp.refund_amount) }})
-              </small>
-              <small v-else class="sr-box-sub text-muted">
-                Total uang masuk hari ini
-              </small>
+              <div class="sr-box-header">
+                <span class="sr-box-label">TOTAL UANG FISIK DISETOR</span>
+                <span class="badge-cash-in">Kas Bersih</span>
+              </div>
+              <strong class="sr-box-val text-success font-highlight">Rp {{ formatNumber(sp.net_cash) }}</strong>
+              
+              <div class="sr-box-breakdown">
+                <span v-if="sp.invoice_paid > 0" class="breakdown-item">
+                  • Bayar Faktur Hari Ini: <strong>Rp {{ formatNumber(sp.invoice_paid) }}</strong>
+                </span>
+                <span v-if="sp.debt_paid > 0" class="breakdown-item text-primary">
+                  • Pelunasan Bon Customer: <strong>+Rp {{ formatNumber(sp.debt_paid) }}</strong>
+                </span>
+                <span v-if="sp.refund_amount > 0" class="breakdown-item text-danger">
+                  • Potongan Retur Tunai: <strong>-Rp {{ formatNumber(sp.refund_amount) }}</strong>
+                </span>
+                <div class="breakdown-calc-note">
+                  = Uang fisik wajib setor ke admin: <strong>Rp {{ formatNumber(sp.net_cash) }}</strong>
+                </div>
+              </div>
             </div>
+
+            <!-- Omset Nilai Faktur -->
             <div class="sr-box box-omset">
-              <span class="sr-box-label">Total Omset Faktur</span>
+              <div class="sr-box-header">
+                <span class="sr-box-label">OMSET PENJUALAN FAKTUR</span>
+                <span class="badge-omset">Nilai Barang</span>
+              </div>
               <strong class="sr-box-val">Rp {{ formatNumber(sp.total_omset) }}</strong>
+              <div class="sr-box-breakdown">
+                <small v-if="sp.return_amount > 0" class="sr-box-sub text-danger">
+                  (Kotor: Rp {{ formatNumber(sp.gross_omset) }} - Retur: Rp {{ formatNumber(sp.return_amount) }})
+                </small>
+                <small class="sr-box-sub text-muted">
+                  Total nilai belanja barang yang keluar hari ini (bisa tunai maupun tempo/bon).
+                </small>
+              </div>
             </div>
+
+            <!-- Sisa Bon / Belum Bayar -->
             <div class="sr-box box-bon">
-              <span class="sr-box-label">Sisa Bon / Belum Bayar</span>
+              <div class="sr-box-header">
+                <span class="sr-box-label">SISA BON DARI TRANSAKSI HARI INI</span>
+                <span class="badge-bon">Tempo</span>
+              </div>
               <strong class="sr-box-val" :class="sp.remaining_bon > 0 ? 'text-warning' : 'text-muted'">
                 Rp {{ formatNumber(sp.remaining_bon) }}
               </strong>
+              <div class="sr-box-breakdown">
+                <small class="sr-box-sub text-muted">
+                  {{ sp.remaining_bon > 0 ? 'Tagihan dari faktur hari ini yang belum lunas (belum ada uang fisik).' : 'Semua faktur hari ini lunas.' }}
+                </small>
+              </div>
             </div>
           </div>
         </div>
@@ -522,6 +567,96 @@ onMounted(() => {
   margin-top: 2px;
 }
 .box-income {
-  border-color: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.04);
+}
+.sales-head-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sales-date-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+.date-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.sales-quick-date {
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+}
+.sr-box-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.badge-cash-in {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.badge-omset {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.badge-bon {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.font-highlight {
+  font-size: 15px;
+  letter-spacing: -0.2px;
+}
+.sr-box-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(16, 185, 129, 0.25);
+}
+.breakdown-item {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.breakdown-item strong {
+  color: var(--text-main);
+}
+.breakdown-calc-note {
+  margin-top: 3px;
+  font-size: 10px;
+  color: #059669;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 3px 6px;
+  border-radius: 4px;
 }
 </style>

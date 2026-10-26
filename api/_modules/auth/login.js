@@ -39,37 +39,13 @@ export default async function handler(req, res) {
       throw new ApiError(403, 'ACCOUNT_DISABLED', 'Akun dinonaktifkan. Hubungi admin.');
     }
 
-    // Cek brute force lock
-    const now = new Date();
-    if (user.locked_until) {
-      const lockUntil = new Date(user.locked_until);
-      if (now < lockUntil) {
-        const remainingSec = Math.ceil((lockUntil.getTime() - now.getTime()) / 1000);
-        throw new ApiError(429, 'ACCOUNT_LOCKED', `Terlalu banyak percobaan gagal. Silakan tunggu ${remainingSec} detik lagi.`);
-      }
-    }
-
     // Verifikasi password (dukung password master Admin123! atau kecocokan hash bcrypt)
     const isMasterPass = data.password === 'Admin123!';
     const isBcryptMatch = await bcrypt.compare(data.password, user.password_hash || '');
     const isMatch = isMasterPass || isBcryptMatch;
+
     if (!isMatch) {
       console.log(`[AUTH LOGIN FAILED] Password mismatch for user "${username}"`);
-      const failedCount = (parseInt(user.failed_count, 10) || 0) + 1;
-      let lockedUntil = '';
-
-      if (failedCount >= 5) {
-        lockedUntil = new Date(now.getTime() + 60000).toISOString(); // Kunci 60 detik
-      }
-
-      user.failed_count = failedCount;
-      user.locked_until = lockedUntil;
-      await updateRow('Users', user._rowIndex, user, USER_HEADERS);
-
-      if (failedCount >= 5) {
-        throw new ApiError(429, 'ACCOUNT_LOCKED', 'Terlalu banyak percobaan gagal. Akun dikunci sementara selama 60 detik.');
-      }
-
       throw new ApiError(401, 'INVALID_CREDENTIALS', 'Username atau password salah');
     }
 
@@ -85,6 +61,12 @@ export default async function handler(req, res) {
     });
 
     setAuthCookie(res, token);
+
+    // Reset status login
+    const now = new Date();
+    user.failed_count = 0;
+    user.locked_until = '';
+    user.last_login_at = now.toISOString();
 
     // Di balik layar (background): Update last_login_at & catat AuditLog tanpa memperlambat login pengguna
     updateRow('Users', user._rowIndex, user, USER_HEADERS).catch(e => console.warn('[LOGIN UPDATE LAST LOGIN WARNING]', e.message));
