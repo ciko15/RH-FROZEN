@@ -27,6 +27,16 @@
           <label>Tanggal Acuan</label>
           <input v-model="filterDate" type="date" @change="fetchReports" />
         </div>
+
+        <div v-if="isAdmin && salesOptions.length > 0" class="form-group full-width">
+          <label>Filter Sales</label>
+          <select v-model="filterSalesId" @change="fetchReports">
+            <option value="Semua">Semua Sales (Konsolidasi)</option>
+            <option v-for="s in salesOptions" :key="s.id" :value="s.id">
+              {{ s.name }}
+            </option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -114,20 +124,78 @@
         </div>
       </div>
     </div>
+
+    <!-- TABEL REKAP PENDAPATAN HARIAN / PERIODE PER SALES (ADMIN & MANAJER) -->
+    <div v-if="isAdmin && salesPerformance.length > 0" class="card sales-perf-card">
+      <div class="card-title-head">
+        <div class="card-title">
+          <Icon name="sales" size="18" />
+          <span>Rekap Uang Diterima & Penjualan Per Sales ({{ filterPeriod }})</span>
+        </div>
+        <span class="sales-count-badge">{{ salesPerformance.length }} Sales</span>
+      </div>
+
+      <div class="sales-cards-list">
+        <div
+          v-for="sp in salesPerformance"
+          :key="sp.sales_id"
+          class="sales-row-card"
+          :class="{ 'has-income': sp.cash_received > 0 }"
+        >
+          <div class="sr-header">
+            <div class="sr-identity">
+              <span class="sr-avatar">{{ sp.sales_name.charAt(0).toUpperCase() }}</span>
+              <div class="sr-names">
+                <strong class="sr-name">{{ sp.sales_name }}</strong>
+                <small class="sr-user">@{{ sp.username }}</small>
+              </div>
+            </div>
+            <div class="sr-faktur-pill">
+              {{ sp.total_invoices }} Faktur ({{ sp.invoices_lunas }} Lunas)
+            </div>
+          </div>
+
+          <div class="sr-grid">
+            <div class="sr-box box-income">
+              <span class="sr-box-label">Uang Diterima Customer</span>
+              <strong class="sr-box-val text-success">Rp {{ formatNumber(sp.cash_received) }}</strong>
+              <small v-if="sp.refund_amount > 0" class="sr-box-sub text-danger">
+                Retur: -Rp {{ formatNumber(sp.refund_amount) }}
+              </small>
+            </div>
+            <div class="sr-box box-omset">
+              <span class="sr-box-label">Total Omset Faktur</span>
+              <strong class="sr-box-val">Rp {{ formatNumber(sp.total_omset) }}</strong>
+            </div>
+            <div class="sr-box box-bon">
+              <span class="sr-box-label">Sisa Bon / Belum Bayar</span>
+              <strong class="sr-box-val" :class="sp.remaining_bon > 0 ? 'text-warning' : 'text-muted'">
+                Rp {{ formatNumber(sp.remaining_bon) }}
+              </strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { apiFetch } from '../api.js';
+import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
 import { formatNumber } from '../utils/format.js';
 
+const authStore = useAuthStore();
 const appStore = useAppStore();
 
-const filterPeriod = ref('Bulanan');
+const isAdmin = computed(() => ['admin', 'manajer'].includes(authStore.user?.role));
+
+const filterPeriod = ref('Harian');
 const filterDate = ref(new Date().toISOString().substring(0, 10));
+const filterSalesId = ref('Semua');
 
 const summary = ref({
   total_sales: 0,
@@ -139,16 +207,24 @@ const topCustomers = ref([]);
 const grossProfit = ref(null);
 const commission = ref(null);
 const invoiceList = ref([]);
+const salesPerformance = ref([]);
+const salesOptions = ref([]);
 
 async function fetchReports() {
   try {
-    const res = await apiFetch(`/api/reports?period=${filterPeriod.value}&date=${filterDate.value}`);
+    let url = `/api/reports?period=${filterPeriod.value}&date=${filterDate.value}`;
+    if (filterSalesId.value && filterSalesId.value !== 'Semua') {
+      url += `&sales_id=${filterSalesId.value}`;
+    }
+    const res = await apiFetch(url);
     if (res.data) {
       summary.value = res.data.summary;
       topCustomers.value = res.data.top_customers || [];
       grossProfit.value = res.data.gross_profit;
       commission.value = res.data.commission;
       invoiceList.value = res.data.invoices || [];
+      salesPerformance.value = res.data.sales_performance || [];
+      salesOptions.value = res.data.sales_options || [];
     }
   } catch (err) {
     appStore.showToast(err.message, 'error');
@@ -323,5 +399,126 @@ onMounted(() => {
 }
 .top-row:last-child {
   border-bottom: none;
+}
+
+/* Kartu & Tabel Rekap Sales */
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+.sales-perf-card {
+  margin-top: 14px;
+}
+.card-title-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.card-title-head .card-title {
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sales-count-badge {
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.sales-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sales-row-card {
+  border: 1px solid var(--border-color);
+  background: var(--bg-app);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.15s ease;
+}
+.sales-row-card.has-income {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.03);
+}
+.sr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sr-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sr-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary), #4f46e5);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sr-names {
+  display: flex;
+  flex-direction: column;
+}
+.sr-name {
+  font-size: 14px;
+  color: var(--text-main);
+}
+.sr-user {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.sr-faktur-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-main);
+}
+.sr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.sr-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sr-box-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.sr-box-val {
+  font-size: 13px;
+  font-weight: 800;
+}
+.sr-box-sub {
+  font-size: 10px;
+  margin-top: 2px;
+}
+.box-income {
+  border-color: rgba(16, 185, 129, 0.3);
 }
 </style>

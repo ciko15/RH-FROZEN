@@ -489,7 +489,10 @@ async function handleCancel() {
   if (!confirm('Batalkan permintaan ini?')) return;
   actionLoading.value = true;
   try {
-    await apiFetch(`/api/orders/${selected.value.id}/cancel`, { method: 'POST' });
+    await apiFetch(`/api/orders/${selected.value.id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Dibatalkan oleh pengguna' })
+    });
     appStore.showToast('Permintaan dibatalkan', 'success');
     selected.value = null;
     await load();

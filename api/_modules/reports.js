@@ -6,7 +6,7 @@ import { handleApiError } from './_lib/errors.js';
 export default async function handler(req, res) {
   try {
     const authUser = await authenticate(req);
-    const tabs = await getTabsBatch(['Invoices', 'InvoiceItems', 'OrderItems', 'Orders', 'Payments', 'Customers', 'Config', 'Returns']);
+    const tabs = await getTabsBatch(['Invoices', 'InvoiceItems', 'OrderItems', 'Orders', 'Payments', 'Customers', 'Config', 'Returns', 'Users']);
 
     const period = req.query.period || 'Bulanan'; // Harian | Mingguan | Bulanan
     const filterDate = req.query.date || new Date().toISOString().substring(0, 10);
@@ -18,6 +18,7 @@ export default async function handler(req, res) {
     let payments = tabs.Payments || [];
     let returns = tabs.Returns || [];
     let customers = tabs.Customers || [];
+    const users = tabs.Users || [];
     const configs = tabs.Config || [];
     const commissionPercent = parseFloat(configs.find(c => c.key === 'commission_percent')?.value || '0');
 
@@ -138,6 +139,55 @@ export default async function handler(req, res) {
     const paidSalesTotal = paidInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal) || 0), 0);
     const estimatedCommission = (paidSalesTotal * commissionPercent) / 100;
 
+    // 8. Rekap Pendapatan Per Sales (Harian / Periode Terpilih)
+    // Ambil daftar user berrole sales
+    const allSalesUsers = users.filter(u => u.role === 'sales' && String(u.active).toUpperCase() !== 'FALSE');
+    const salesPerformance = allSalesUsers.map(salesUser => {
+      // Invoices milik sales ini di periode terpilih
+      const userInvoices = periodInvoices.filter(inv => inv.sales_id === salesUser.id);
+      const invoiceIds = new Set(userInvoices.map(inv => inv.id));
+
+      // Pembayaran uang masuk untuk sales ini di periode terpilih
+      const userPayments = periodPayments.filter(p =>
+        (p.created_by === salesUser.id || invoiceIds.has(p.invoice_id)) && p.type !== 'Pengeluaran'
+      );
+      const userRefunds = periodPayments.filter(p =>
+        (p.created_by === salesUser.id || invoiceIds.has(p.invoice_id)) && p.type === 'Pengeluaran'
+      );
+
+      const totalFaktur = userInvoices.length;
+      const totalOmset = userInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal || inv.total_due) || 0), 0);
+      const totalUangMasuk = userPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+      const totalUangRetur = userRefunds.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+      const uangBersih = totalUangMasuk - totalUangRetur;
+
+      // Sisa piutang/bon invoice periode ini
+      const sisaBon = userInvoices.reduce((sum, inv) => sum + (parseFloat(inv.remaining) || 0), 0);
+
+      // Jumlah faktur lunas
+      const fakturLunas = userInvoices.filter(inv => parseFloat(inv.remaining || 0) <= 0).length;
+
+      return {
+        sales_id: salesUser.id,
+        sales_name: salesUser.full_name || salesUser.username,
+        username: salesUser.username,
+        branch_id: salesUser.branch_id,
+        total_invoices: totalFaktur,
+        invoices_lunas: fakturLunas,
+        total_omset: totalOmset,
+        cash_received: totalUangMasuk,
+        refund_amount: totalUangRetur,
+        net_cash: uangBersih,
+        remaining_bon: sisaBon
+      };
+    }).sort((a, b) => b.cash_received - a.cash_received);
+
+    // Daftar sales untuk opsi dropdown filter
+    const salesOptions = allSalesUsers.map(u => ({
+      id: u.id,
+      name: u.full_name || u.username
+    }));
+
     return res.status(200).json({
       ok: true,
       data: {
@@ -147,6 +197,8 @@ export default async function handler(req, res) {
           total_payments: totalPayments,
           total_receivables: totalReceivables
         },
+        sales_performance: salesPerformance,
+        sales_options: salesOptions,
         top_customers: topCustomers,
         gross_profit: grossProfitData,
         commission: {
