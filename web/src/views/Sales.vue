@@ -199,7 +199,17 @@
               <div class="cart-ctrl">
                 <div class="qty-btn-group">
                   <button type="button" @click="decCart(idx)">−</button>
-                  <input v-model.number="it.qty" type="number" min="1" :max="it.maxStock" @input="clampQty(it)" />
+                  <input
+                    v-model.number="it.qty"
+                    type="number"
+                    min="1"
+                    :max="it.maxStock"
+                    inputmode="numeric"
+                    @focus="onQtyFocus($event)"
+                    @click="onQtyFocus($event)"
+                    @input="onQtyInput(it)"
+                    @blur="onQtyBlur(it)"
+                  />
                   <button type="button" :disabled="it.qty >= it.maxStock" @click="it.qty++">+</button>
                 </div>
                 <div class="cart-subtotal">
@@ -536,15 +546,42 @@ function decCart(idx) {
   }
 }
 
-function clampQty(it) {
-  if (it.qty > it.maxStock) it.qty = it.maxStock;
-  if (it.qty < 1) it.qty = 1;
+function onQtyFocus(e) {
+  if (e && e.target && typeof e.target.select === 'function') {
+    e.target.select();
+  }
+}
+
+function onQtyInput(it) {
+  // Hanya batasi jika melebihi stok maksimal agar user bisa bebas menghapus/mengetik angka baru tanpa langsung dipaksa kembali ke 1
+  if (it.qty > it.maxStock) {
+    it.qty = it.maxStock;
+  }
+  if (it.discount > (it.qty || 0) * it.price) {
+    it.discount = (it.qty || 0) * it.price;
+  }
+  if (payMethod.value !== 'Tempo') {
+    paidAmount.value = totalDue.value;
+  }
+}
+
+function onQtyBlur(it) {
+  // Saat selesai mengetik / pindah kursor, pastikan angka valid minimal 1 dan tidak lebih dari maxStock
+  if (!it.qty || it.qty < 1 || isNaN(it.qty)) {
+    it.qty = 1;
+  } else if (it.qty > it.maxStock) {
+    it.qty = it.maxStock;
+  }
   if (it.discount > it.qty * it.price) {
     it.discount = it.qty * it.price;
   }
   if (payMethod.value !== 'Tempo') {
     paidAmount.value = totalDue.value;
   }
+}
+
+function clampQty(it) {
+  onQtyBlur(it);
 }
 
 function onCustomerChange() {
@@ -1186,7 +1223,8 @@ onUnmounted(() => {
 .cart-ctrl {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .qty-btn-group {
   display: flex;
@@ -1196,6 +1234,7 @@ onUnmounted(() => {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 2px;
+  flex-shrink: 0;
 }
 .qty-btn-group button {
   width: 28px;
@@ -1206,14 +1245,25 @@ onUnmounted(() => {
   color: var(--text-main);
   font-weight: 700;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .qty-btn-group input {
-  width: 44px;
+  width: 58px;
+  min-width: 54px;
+  padding: 0 4px;
   text-align: center;
   border: none;
   background: transparent;
   font-weight: 700;
+  font-size: 14px;
   color: var(--text-main);
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+}
+.qty-btn-group input::-webkit-outer-spin-button,
+.qty-btn-group input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 .cart-subtotal {
   font-weight: 800;

@@ -47,7 +47,14 @@
         </div>
         <div class="qty-ctrl">
           <button type="button" @click="dec(idx)">−</button>
-          <input v-model.number="it.qty" type="number" min="1" inputmode="numeric" />
+          <input
+            v-model.number="it.qty"
+            type="number"
+            min="1"
+            inputmode="numeric"
+            @focus="$event.target.select()"
+            @click="$event.target.select()"
+          />
           <button type="button" @click="it.qty++">+</button>
         </div>
       </div>
