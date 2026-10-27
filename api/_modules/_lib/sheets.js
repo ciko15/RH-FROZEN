@@ -175,26 +175,29 @@ function normalizeTabRows(tabName, rows) {
   }
 
   if (tabName === 'Returns') {
-    // Returns sheet: type=invoice_id, ref_id=customer_id, sales_id=date(geser), branch_id=sales_id(geser),
-    // date=total/amount, reason=user_id
-    // Deteksi: jika 'sales_id' berisi value tanggal (bukan user ID)
-    const sample = rows[0];
-    const salesIdVal = String(sample.sales_id || '');
-    const isShifted = salesIdVal && salesIdVal.match(/^\d{4}-\d{2}-\d{2}$/);
-
-    if (isShifted) {
-      return rows.map(r => ({
+    // Normalisasi baris Returns: deteksi per baris apakah kolom bergeser (format lama) atau normal (format baru)
+    return rows.map(r => {
+      const salesIdVal = String(r.sales_id || '').trim();
+      const isShifted = salesIdVal && salesIdVal.match(/^\d{4}-\d{2}-\d{2}$/);
+      if (isShifted) {
+        return {
+          ...r,
+          invoice_id: r.type || '',       // type kolom berisi invoice_id
+          customer_id: r.ref_id || '',    // ref_id kolom berisi customer_id
+          invoice_date: r.sales_id || '', // sales_id kolom berisi tanggal retur
+          sales_id: r.branch_id || '',    // branch_id kolom berisi sales_id
+          total: r.date || 0,             // date kolom berisi amount/total retur
+          user_id: r.reason || '',        // reason kolom berisi user_id
+          date: r.sales_id || '',         // tanggal retur sebenarnya di kolom sales_id
+          reason: r.status || '',         // status kolom berisi reason/alasan
+        };
+      }
+      return {
         ...r,
-        invoice_id: r.type || '',       // type kolom berisi invoice_id
-        customer_id: r.ref_id || '',    // ref_id kolom berisi customer_id
-        invoice_date: r.sales_id || '', // sales_id kolom berisi tanggal retur
-        sales_id: r.branch_id || '',    // branch_id kolom berisi sales_id
-        total: r.date || 0,             // date kolom berisi amount/total retur
-        user_id: r.reason || '',        // reason kolom berisi user_id
-        date: r.sales_id || '',         // tanggal retur sebenarnya di kolom sales_id
-        reason: r.status || '',         // status kolom berisi reason/alasan
-      }));
-    }
+        invoice_id: r.ref_id || r.invoice_id || '',
+        total: (r.total !== undefined && r.total !== null && !isNaN(parseFloat(r.total))) ? parseFloat(r.total) : 0
+      };
+    });
   }
 
   if (tabName === 'Customers') {

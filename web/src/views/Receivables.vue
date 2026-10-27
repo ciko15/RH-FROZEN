@@ -187,10 +187,10 @@ const filteredDebtors = computed(() => {
   const q = searchQuery.value.toLowerCase().trim();
   if (!q) return debtors.value;
   return debtors.value.filter(d => 
-    (d.name && d.name.toLowerCase().includes(q)) ||
-    (d.address && d.address.toLowerCase().includes(q)) ||
-    (d.phone && d.phone.includes(q)) ||
-    (d.branch_id && d.branch_id.toLowerCase().includes(q))
+    (d.name && String(d.name).toLowerCase().includes(q)) ||
+    (d.address && String(d.address).toLowerCase().includes(q)) ||
+    (d.phone && String(d.phone).includes(q)) ||
+    (d.branch_id && String(d.branch_id).toLowerCase().includes(q))
   );
 });
 

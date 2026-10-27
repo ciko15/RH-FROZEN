@@ -45,9 +45,11 @@ export default async function handler(req, res) {
     const enrichedReturns = invoiceReturns.map(r => {
       const items = allReturnItems.filter(ri => ri.return_id === r.id);
       const computedTotal = items.reduce((sum, it) => sum + ((parseInt(it.qty, 10) || 0) * (parseFloat(it.price) || 0)), 0);
+      const directTotal = parseFloat(r.total || 0);
+      const finalReturnTotal = directTotal > 0 ? directTotal : computedTotal;
       return {
         ...r,
-        total: parseFloat(r.total || computedTotal || 0),
+        total: finalReturnTotal,
         items: items.map(it => ({
           ...it,
           qty: parseInt(it.qty, 10),

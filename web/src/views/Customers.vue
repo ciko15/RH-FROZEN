@@ -307,9 +307,9 @@ const filteredCustomers = computed(() => {
   const q = searchQuery.value.toLowerCase().trim();
   if (q) {
     list = list.filter(c => 
-      (c.name && c.name.toLowerCase().includes(q)) ||
-      (c.phone && c.phone.includes(q)) ||
-      (c.address && c.address.toLowerCase().includes(q))
+      (c.name && String(c.name).toLowerCase().includes(q)) ||
+      (c.phone && String(c.phone).includes(q)) ||
+      (c.address && String(c.address).toLowerCase().includes(q))
     );
   }
   return list;

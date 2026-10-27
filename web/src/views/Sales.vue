@@ -391,9 +391,9 @@ const filteredCustomers = computed(() => {
   if (!customerSearchQuery.value) return customers.value;
   const q = customerSearchQuery.value.toLowerCase().trim();
   return customers.value.filter(c =>
-    (c.name && c.name.toLowerCase().includes(q)) ||
-    (c.phone && c.phone.toLowerCase().includes(q)) ||
-    (c.address && c.address.toLowerCase().includes(q))
+    (c.name && String(c.name).toLowerCase().includes(q)) ||
+    (c.phone && String(c.phone).includes(q)) ||
+    (c.address && String(c.address).toLowerCase().includes(q))
   );
 });
 

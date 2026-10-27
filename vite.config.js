@@ -7,25 +7,36 @@ import { spawn } from 'child_process';
 
 function backendServerPlugin() {
   let backendProc = null;
+  let isShuttingDown = false;
+
+  function startBackend() {
+    if (isShuttingDown) return;
+    try {
+      backendProc = spawn('node', ['scripts/dev-server.mjs'], {
+        stdio: 'inherit',
+        cwd: path.resolve(__dirname)
+      });
+      backendProc.on('error', (err) => {
+        console.error('[BACKEND DEV SERVER ERROR]', err);
+      });
+      backendProc.on('exit', (code) => {
+        if (!isShuttingDown) {
+          console.warn(`[BACKEND SERVER EXITED] code ${code}. Restarting backend in 1s...`);
+          setTimeout(startBackend, 1000);
+        }
+      });
+    } catch (e) {
+      console.error('[BACKEND LAUNCH FAILED]', e);
+    }
+  }
+
   return {
     name: 'backend-dev-server',
     configureServer(server) {
-      if (!process.env.VITE_BACKEND_STARTED) {
-        process.env.VITE_BACKEND_STARTED = '1';
-        try {
-          backendProc = spawn('node', ['scripts/dev-server.mjs'], {
-            stdio: 'inherit',
-            cwd: path.resolve(__dirname)
-          });
-          backendProc.on('error', (err) => {
-            console.error('[BACKEND DEV SERVER ERROR]', err);
-          });
-        } catch (e) {
-          console.error('[BACKEND LAUNCH FAILED]', e);
-        }
-      }
+      startBackend();
 
       server.httpServer?.on('close', () => {
+        isShuttingDown = true;
         if (backendProc) {
           backendProc.kill();
         }
