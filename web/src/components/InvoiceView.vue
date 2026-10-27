@@ -142,6 +142,9 @@
       <span class="bal-val" :class="isLunas ? 'text-success' : 'text-danger'">
         {{ formatRp(invoice.remaining) }}
       </span>
+      <small v-if="invoice.total_returned_amount > 0 && Number(invoice.paid_amount) < Number(invoice.total_due)" class="text-muted" style="font-size: 11px; margin-top: 4px; display: block;">
+        * Otomatis terpotong retur barang senilai {{ formatRp(invoice.total_returned_amount) }} (tidak ada uang kas keluar).
+      </small>
     </div>
 
     <div class="meta-info">
