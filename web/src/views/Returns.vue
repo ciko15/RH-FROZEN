@@ -154,6 +154,12 @@
           <div v-if="selectedReturn.total_amount" class="info-row" style="font-weight: 700; color: var(--danger, #dc2626);">
             <span>Total Nilai Retur</span><strong>Rp {{ formatNumber(selectedReturn.total_amount) }}</strong>
           </div>
+          <div v-if="selectedReturn.debt_deduction > 0" class="info-row" style="font-size: 12px; color: #d97706;">
+            <span>↳ Potong Tagihan / Piutang</span><strong>- Rp {{ formatNumber(selectedReturn.debt_deduction) }}</strong>
+          </div>
+          <div v-if="selectedReturn.cash_refund > 0" class="info-row" style="font-size: 12px; color: #2563eb;">
+            <span>↳ Potong Uang Masuk / Kas</span><strong>- Rp {{ formatNumber(selectedReturn.cash_refund) }}</strong>
+          </div>
 
           <!-- Aksi Admin: Setujui / Tolak -->
           <div v-if="isAdmin && selectedReturn.status === 'Menunggu'" class="action-buttons">

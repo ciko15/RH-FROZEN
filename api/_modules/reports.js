@@ -102,10 +102,15 @@ export default async function handler(req, res) {
 
     // 2. Order Masuk
     const totalOrdersCount = periodOrders.length;
-    // 3. Pembayaran Masuk (Hanya Pemasukan / Pelunasan, bukan Pengeluaran)
-    const totalPayments = periodPayments
+    // 3. Pembayaran Masuk Bersih (Pemasukan / Pelunasan dikurangi Pengembalian Uang Tunai Retur)
+    const totalPaymentsIn = periodPayments
       .filter(p => p.type !== 'Pengeluaran')
       .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const totalRefunds = periodPayments
+      .filter(p => p.type === 'Pengeluaran')
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const netPayments = Math.max(0, totalPaymentsIn - totalRefunds);
+
     // 4. Total Piutang Pelanggan
     const totalReceivables = customers.reduce((sum, c) => sum + (parseFloat(c.balance) || 0), 0);
 
@@ -257,7 +262,9 @@ export default async function handler(req, res) {
           gross_sales: grossSales,
           total_returns: totalReturnAmount,
           total_orders: totalOrdersCount,
-          total_payments: totalPayments,
+          total_payments: netPayments,
+          gross_payments: totalPaymentsIn,
+          total_refunds: totalRefunds,
           total_receivables: totalReceivables
         },
         sales_performance: salesPerformance,

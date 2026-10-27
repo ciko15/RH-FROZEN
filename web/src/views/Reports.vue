@@ -60,7 +60,10 @@
       <div class="stat-card purple">
         <span class="label">Uang Masuk</span>
         <span class="val">Rp {{ formatNumber(summary.total_payments) }}</span>
-        <span class="sub">Pembayaran & Pelunasan</span>
+        <span v-if="summary.total_refunds > 0" class="sub" style="color: #b91c1c;">
+          (Diterima: Rp {{ formatNumber(summary.gross_payments) }} - Retur: Rp {{ formatNumber(summary.total_refunds) }})
+        </span>
+        <span v-else class="sub">Pembayaran & Pelunasan Bersih</span>
       </div>
 
       <div class="stat-card orange">

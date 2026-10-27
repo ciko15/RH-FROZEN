@@ -26,11 +26,12 @@ export default async function handler(req, res) {
 
     // GET: Daftar Retur (sales hanya miliknya)
     if (req.method === 'GET') {
-      const tabs = await getTabsBatch(['Returns', 'ReturnItems', 'Users', 'Invoices']);
+      const tabs = await getTabsBatch(['Returns', 'ReturnItems', 'Users', 'Invoices', 'Payments']);
       let returns = tabs.Returns || [];
       const returnItems = tabs.ReturnItems || [];
       const users = tabs.Users || [];
       const invoices = tabs.Invoices || [];
+      const payments = tabs.Payments || [];
 
       if (authUser.role === 'sales') {
         returns = returns.filter(r => r.sales_id === authUser.id || r.user_id === authUser.id);
@@ -45,6 +46,17 @@ export default async function handler(req, res) {
         const inv = invoices.find(i => i.id === (r.ref_id || r.invoice_id));
         const items = returnItems.filter(ri => ri.return_id === r.id);
         const totalAmount = items.reduce((s, it) => s + ((parseInt(it.qty, 10) || 0) * (parseFloat(it.price) || 0)), 0);
+
+        // Ambil pencatatan pengeluaran kas jika ada
+        const refundPayment = payments.find(p =>
+          p.type === 'Pengeluaran' && (
+            (r.return_no && p.note && p.note.includes(r.return_no)) ||
+            (inv && p.invoice_id === inv.id)
+          )
+        );
+        const cashRefund = refundPayment ? parseFloat(refundPayment.amount || 0) : 0;
+        const debtDeduction = Math.max(0, totalAmount - cashRefund);
+
         return {
           ...r,
           status: r.status || 'Menunggu',
@@ -54,6 +66,8 @@ export default async function handler(req, res) {
           customer_name: inv ? inv.customer_name : '-',
           total_qty: parseInt(r.total_qty || items.reduce((s, it) => s + (parseInt(it.qty, 10) || 0), 0), 10),
           total_amount: totalAmount,
+          cash_refund: cashRefund,
+          debt_deduction: debtDeduction,
           items: items.map(it => ({ ...it, qty: parseInt(it.qty, 10), price: parseFloat(it.price || 0) }))
         };
       });
