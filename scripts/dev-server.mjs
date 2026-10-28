@@ -75,6 +75,8 @@ const server = http.createServer(async (req, res) => {
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     console.log(`[API DEV] Port ${PORT} already in use, reusing running server.`);
+    // Jangan biarkan proses mati (exit 0) agar plugin vite tidak looping restart
+    setInterval(() => {}, 1000 * 60 * 60);
   } else {
     console.error('[API DEV SERVER ERROR]', e);
   }
