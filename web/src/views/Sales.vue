@@ -167,7 +167,12 @@
               <span class="stock-name">{{ s.product_name }}</span>
               <div class="tile-meta-row">
                 <span class="stock-qty" :class="{ danger: s.stock <= 0 }">Stok: {{ fmt(s.stock) }}</span>
-                <span class="stock-price">Rp {{ fmt(s.price) }}</span>
+                <span v-if="hasCustomPrice(s.product_id)" class="stock-price custom-price-highlight" title="Harga Khusus Pelanggan">
+                  <span class="disc-strike">Rp {{ fmt(s.price) }}</span>
+                  <span>Rp {{ fmt(getProductPrice(s)) }}</span>
+                  <span class="custom-badge-tag">Khusus</span>
+                </span>
+                <span v-else class="stock-price">Rp {{ fmt(s.price) }}</span>
               </div>
             </div>
             <span v-if="cartQtyOf(s.product_id) > 0" class="stock-badge">{{ fmt(cartQtyOf(s.product_id)) }}</span>
@@ -193,8 +198,14 @@
           <div v-for="(it, idx) in cart" :key="it.product_id" class="cart-row">
             <div class="cart-main-line">
               <div class="cart-info">
-                <div class="cart-name">{{ it.emoji }} {{ it.product_name }}</div>
-                <small class="text-muted">@ Rp {{ fmt(it.price) }} · Maks stok: {{ fmt(it.maxStock) }}</small>
+                <div class="cart-name">
+                  {{ it.emoji }} {{ it.product_name }}
+                  <span v-if="it.isCustomPrice" class="custom-badge-tag">Harga Khusus</span>
+                </div>
+                <small class="text-muted">
+                  <span v-if="it.isCustomPrice && it.defaultPrice && it.defaultPrice !== it.price" class="disc-strike">@ Rp {{ fmt(it.defaultPrice) }} </span>
+                  @ Rp {{ fmt(it.price) }} · Maks stok: {{ fmt(it.maxStock) }}
+                </small>
               </div>
               <div class="cart-ctrl">
                 <div class="qty-btn-group">
@@ -396,6 +407,18 @@ const showCustomerDropdown = ref(false);
 const customerSearchQuery = ref('');
 const customerDropdownRef = ref(null);
 const custSearchInputRef = ref(null);
+const customerPrices = ref(new Map()); // Map: product_id -> custom_price
+
+function getProductPrice(s) {
+  if (selectedCustomerId.value && customerPrices.value.has(s.product_id)) {
+    return customerPrices.value.get(s.product_id);
+  }
+  return s.price || 0;
+}
+
+function hasCustomPrice(productId) {
+  return selectedCustomerId.value && customerPrices.value.has(productId);
+}
 
 const filteredCustomers = computed(() => {
   if (!customerSearchQuery.value) return customers.value;
@@ -417,18 +440,60 @@ function toggleCustomerDropdown() {
   }
 }
 
-function selectCustomer(c) {
+async function selectCustomer(c) {
   selectedCustomerId.value = c.id;
   showCustomerDropdown.value = false;
   customerSearchQuery.value = '';
+  await loadCustomerPrices(c.id);
   onCustomerChange();
 }
 
 function clearCustomerSelection() {
   selectedCustomerId.value = '';
+  customerPrices.value.clear();
+  // Kembalikan harga cart ke harga reguler
+  for (const it of cart.value) {
+    it.price = it.defaultPrice || it.price;
+    it.isCustomPrice = false;
+    if (it.discount > it.qty * it.price) {
+      it.discount = it.qty * it.price;
+    }
+  }
   showCustomerDropdown.value = false;
   customerSearchQuery.value = '';
   onCustomerChange();
+}
+
+async function loadCustomerPrices(custId) {
+  customerPrices.value.clear();
+  if (!custId) return;
+  try {
+    const res = await apiFetch(`/api/customers/${custId}/prices`);
+    if (res?.data && Array.isArray(res.data)) {
+      for (const item of res.data) {
+        if (item.custom_price !== null && item.custom_price !== undefined && item.custom_price > 0) {
+          customerPrices.value.set(item.product_id, item.custom_price);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Gagal memuat harga khusus pelanggan:', err);
+  }
+
+  // Update harga barang yang sudah terlanjur ada di keranjang
+  for (const it of cart.value) {
+    if (!it.defaultPrice) it.defaultPrice = it.price;
+    if (customerPrices.value.has(it.product_id)) {
+      it.price = customerPrices.value.get(it.product_id);
+      it.isCustomPrice = true;
+    } else {
+      it.price = it.defaultPrice;
+      it.isCustomPrice = false;
+    }
+    if (it.discount > it.qty * it.price) {
+      it.discount = it.qty * it.price;
+    }
+  }
 }
 
 function handleClickOutside(e) {
@@ -510,6 +575,8 @@ function isValidImage(img) {
 }
 
 function addToCart(s) {
+  const effectivePrice = getProductPrice(s);
+  const isCustom = hasCustomPrice(s.product_id);
   const ex = cart.value.find(i => i.product_id === s.product_id);
   if (ex) {
     if (ex.qty < s.stock) ex.qty++;
@@ -520,7 +587,9 @@ function addToCart(s) {
       product_name: s.product_name,
       emoji: s.emoji || '📦',
       image: s.image || '',
-      price: s.price || 0,
+      defaultPrice: s.price || 0,
+      price: effectivePrice,
+      isCustomPrice: isCustom,
       qty: 1,
       maxStock: s.stock,
       discount: 0,
@@ -1177,6 +1246,32 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 800;
   color: var(--primary);
+}
+.custom-price-highlight {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: #d97706;
+}
+.disc-strike {
+  text-decoration: line-through;
+  opacity: 0.6;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.custom-badge-tag {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-block;
+  margin-left: 4px;
+  text-transform: uppercase;
 }
 .stock-badge {
   position: absolute;

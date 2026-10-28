@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { authenticate } from '../../_lib/auth.js';
 import { requireRole } from '../../_lib/rbac.js';
 import { getTabsBatch, appendRow, updateRow } from '../../_lib/sheets.js';
+import { clearCache } from '../../_lib/cache.js';
 import { validateBody } from '../../_lib/validate.js';
 import { handleApiError, ApiError } from '../../_lib/errors.js';
 
@@ -13,7 +14,8 @@ const setPriceSchema = z.object({
 export default async function handler(req, res) {
   try {
     const authUser = await authenticate(req);
-    requireRole(authUser, ['admin', 'manajer']);
+    // Sales dan kasir boleh melihat harga khusus untuk transaksi kasir
+    requireRole(authUser, ['admin', 'manajer', 'sales', 'kasir']);
 
     const customerId = req.query.id;
     if (!customerId) {
@@ -45,6 +47,7 @@ export default async function handler(req, res) {
     // POST: Simpan / Perbarui Harga Khusus
     // ==========================================
     if (req.method === 'POST') {
+      requireRole(authUser, ['admin', 'manajer']);
       const data = validateBody(setPriceSchema, req.body);
       const tabs = await getTabsBatch(['CustomerPrices']);
       const custPrices = tabs.CustomerPrices || [];
@@ -62,6 +65,8 @@ export default async function handler(req, res) {
           price: data.price
         }, headers);
       }
+
+      clearCache('CustomerPrices');
 
       return res.status(200).json({ ok: true, message: 'Harga khusus berhasil disimpan' });
     }

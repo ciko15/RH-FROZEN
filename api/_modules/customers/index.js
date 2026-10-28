@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { authenticate } from '../_lib/auth.js';
 import { requireRole } from '../_lib/rbac.js';
 import { getTabsBatch, appendRow, updateRow } from '../_lib/sheets.js';
+import { clearCache } from '../_lib/cache.js';
 import { validateBody } from '../_lib/validate.js';
 import { handleApiError, ApiError } from '../_lib/errors.js';
 import { logAudit } from '../_lib/audit.js';
@@ -49,11 +50,15 @@ export default async function handler(req, res) {
           )) {
             return true;
           }
-          // 2. Jika sales_id kosong, tampilkan berdasarkan cabang yang sama
+          // 2. Jika sales_id cocok dengan cabang sales atau jika sales_id kosong di cabang yang sama
           if (!c.sales_id && c.branch_id && c.branch_id === authUser.branch_id) {
             return true;
           }
-          // 3. Fallback jika pernah dipesan oleh sales ini
+          // 3. Jika customer di cabang yang sama (agar pelanggan baru yang dibuat admin di cabang sales ini langsung terlihat)
+          if (c.branch_id && authUser.branch_id && c.branch_id === authUser.branch_id) {
+            return true;
+          }
+          // 4. Fallback jika pernah dipesan oleh sales ini
           const hasOrderFromThisSales = orders.some(o => o.customer_id === c.id && o.sales_id === authUser.id);
           return hasOrderFromThisSales;
         });
@@ -62,8 +67,9 @@ export default async function handler(req, res) {
       const search = (req.query.search || '').toLowerCase().trim();
       if (search) {
         customers = customers.filter(c =>
-          (c.name && c.name.toLowerCase().includes(search)) ||
-          (c.phone && c.phone.includes(search))
+          (c.name && String(c.name).toLowerCase().includes(search)) ||
+          (c.phone && String(c.phone).includes(search)) ||
+          (c.address && String(c.address).toLowerCase().includes(search))
         );
       }
 
@@ -114,6 +120,7 @@ export default async function handler(req, res) {
       };
 
       await appendRow('Customers', newCust, CUST_HEADERS);
+      clearCache('Customers');
       await logAudit(authUser.id, 'CREATE_CUSTOMER', { id: newId, name: data.name, sales_id: salesId });
 
       return res.status(201).json({
@@ -171,6 +178,7 @@ export default async function handler(req, res) {
       };
 
       await updateRow('Customers', cust._rowIndex, updatedCust, CUST_HEADERS);
+      clearCache('Customers');
       await logAudit(authUser.id, 'UPDATE_CUSTOMER', { id: data.id, name: updatedCust.name });
 
       return res.status(200).json({
@@ -215,6 +223,7 @@ export default async function handler(req, res) {
       };
 
       await updateRow('Customers', cust._rowIndex, updatedCust, CUST_HEADERS);
+      clearCache('Customers');
       await logAudit(authUser.id, 'DELETE_CUSTOMER', { id: cust.id, name: cust.name });
 
       return res.status(200).json({
