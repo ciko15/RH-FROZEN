@@ -126,6 +126,10 @@
           <span class="sum-lbl font-bold">Tagihan Bersih Setelah Retur:</span>
           <span class="sum-val font-bold text-primary">{{ formatRp(invoice.adjusted_total_due) }}</span>
         </div>
+        <div v-if="invoice.cash_refund > 0" class="sum-row text-success font-bold" style="background: rgba(16, 185, 129, 0.08); padding: 4px 6px; border-radius: 4px; margin-top: 4px;">
+          <span class="sum-lbl">Kembalian / refund tunai:</span>
+          <span class="sum-val text-success">{{ formatRp(invoice.cash_refund) }}</span>
+        </div>
       </div>
 
       <div class="sum-row">

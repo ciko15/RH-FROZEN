@@ -6,7 +6,7 @@ import { clearCache } from '../_lib/cache.js';
 import { callGas } from '../_lib/gas.js';
 import { validateBody } from '../_lib/validate.js';
 import { checkIdempotency, saveIdempotency } from '../_lib/idempotency.js';
-import { handleApiError } from '../_lib/errors.js';
+import { handleApiError, ApiError } from '../_lib/errors.js';
 
 const returnItemSchema = z.object({
   product_id: z.string().min(1, 'ID barang wajib diisi'),
@@ -85,6 +85,36 @@ export default async function handler(req, res) {
       }
 
       const data = validateBody(createReturnSchema, req.body);
+
+      // Ambil data terkait untuk validasi ketat sebelum memproses
+      const tabs = await getTabsBatch(['Products', 'Invoices', 'InvoiceItems', 'Customers', 'Returns', 'ReturnItems', 'SalesStock']);
+      const products = tabs.Products || [];
+      const invoice = (tabs.Invoices || []).find(inv => inv.id === data.invoice_id);
+      if (!invoice) throw new ApiError(404, 'NOT_FOUND', 'Invoice tidak ditemukan');
+
+      const invoiceItems = (tabs.InvoiceItems || []).filter(ii => ii.invoice_id === data.invoice_id);
+      const prevReturns = (tabs.Returns || []).filter(r => (r.invoice_id === invoice.id || r.ref_id === invoice.id) && r.status !== 'Ditolak');
+      const allReturnItems = tabs.ReturnItems || [];
+
+      // Validasi: Retur tidak boleh melebihi qty yang dibeli di invoice itu (setelah dikurangi retur sebelumnya)
+      for (const item of data.items) {
+        const invItem = invoiceItems.find(ii => ii.product_id === item.product_id);
+        if (!invItem) throw new ApiError(400, 'BAD_REQUEST', `Barang tidak ada dalam invoice ini`);
+        const origQty = parseInt(invItem.qty, 10) || 0;
+
+        // Hitung total retur sebelumnya untuk barang ini
+        const alreadyReturnedQty = prevReturns.reduce((sum, pr) => {
+          const prItems = allReturnItems.filter(ri => ri.return_id === pr.id && ri.product_id === item.product_id);
+          return sum + prItems.reduce((s, pi) => s + (parseInt(pi.qty, 10) || 0), 0);
+        }, 0);
+
+        const maxAllowed = origQty - alreadyReturnedQty;
+        if (item.qty > maxAllowed) {
+          throw new ApiError(400, 'INVALID_RETURN_QTY', `Qty retur ${invItem.name} (${item.qty} pcs) melebihi sisa pembelian yang bisa diretur (maks: ${maxAllowed} pcs)`);
+        }
+      }
+
+      // Panggil GAS untuk simpan record Returns dan ReturnItems
       const result = await callGas('createReturn', {
         invoice_id: data.invoice_id,
         items: data.items,
@@ -93,17 +123,11 @@ export default async function handler(req, res) {
         branch_id: authUser.branch_id || ''
       });
 
-      // Ambil data terkait untuk perhitungan finansial dan nota retur
-      const tabs = await getTabsBatch(['Products', 'Invoices', 'InvoiceItems', 'Customers']);
-      const products = tabs.Products || [];
-      const invoice = (tabs.Invoices || []).find(inv => inv.id === data.invoice_id);
-      const invoiceItems = (tabs.InvoiceItems || []).filter(ii => ii.invoice_id === data.invoice_id);
-      const customer = invoice ? (tabs.Customers || []).find(c => c.id === invoice.customer_id) : null;
+      const customer = (tabs.Customers || []).find(c => c.id === invoice.customer_id);
 
       const enrichedItems = data.items.map(it => {
         const invItem = invoiceItems.find(ii => ii.product_id === it.product_id);
         const prod = products.find(p => p.id === it.product_id);
-        // Prioritaskan harga dari invoice pembelian asli
         const price = invItem ? parseFloat(invItem.price || 0) : (prod ? parseFloat(prod.price || 0) : 0);
         const name = invItem ? invItem.name : (prod ? prod.name : 'Produk');
         return {
@@ -116,65 +140,77 @@ export default async function handler(req, res) {
       });
       const totalAmount = enrichedItems.reduce((s, it) => s + it.line_total, 0);
 
-      // Hitung Pemotongan Bon vs Pengembalian Uang Tunai
-      // Sisa piutang pada invoice
-      const invoiceRemaining = parseFloat(invoice?.remaining || 0);
-      const debtDeduction = Math.min(Math.max(0, invoiceRemaining), totalAmount);
-      const cashRefund = Math.max(0, totalAmount - debtDeduction);
+      // Rumus Finansial Satu Sumber Kebenaran:
+      // Hitung akumulasi nilai retur invoice ini termasuk retur yang baru diajukan
+      const prevReturnVal = prevReturns.reduce((sum, pr) => {
+        const prItems = allReturnItems.filter(ri => ri.return_id === pr.id);
+        return sum + prItems.reduce((s, it) => s + ((parseInt(it.qty, 10) || 0) * (parseFloat(it.price) || 0)), 0);
+      }, 0);
+      const totalInvReturnAmount = prevReturnVal + totalAmount;
 
-      const now = new Date();
-      const todayStr = now.toISOString().substring(0, 10);
-      const timeStr = now.toTimeString().substring(0, 8);
-      const retNo = result?.return_no || result?.data?.return_no || 'RET';
+      const invSubtotal = parseFloat(invoice.subtotal || invoice.total_due || 0);
+      const invPaid = parseFloat(invoice.paid_amount || 0);
+      const newNetDue = Math.max(0, invSubtotal - totalInvReturnAmount);
+      const newRemaining = Math.max(0, newNetDue - invPaid);
+      const newTotalRefund = Math.max(0, invPaid - newNetDue);
 
-      // 1. Jika ada sisa bon/piutang yang dipotong:
-      if (debtDeduction > 0) {
-        if (invoice) {
-          const newRemaining = Math.max(0, invoiceRemaining - debtDeduction);
-          invoice.remaining = newRemaining;
-          if (invoice._rowIndex) {
-            const INVOICE_HEADERS = ['id', 'invoice_no', 'tx_date', 'tx_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by'];
-            try {
-              await updateRow('Invoices', invoice._rowIndex, invoice, INVOICE_HEADERS);
-            } catch (err) {
-              console.warn('[Returns] Gagal update sisa invoice:', err.message);
-            }
-          }
-        }
-
-        if (customer) {
-          const currentBal = parseFloat(customer.balance || 0);
-          customer.balance = Math.max(0, currentBal - debtDeduction);
-          if (customer._rowIndex) {
-            const CUSTOMER_HEADERS = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
-            try {
-              await updateRow('Customers', customer._rowIndex, customer, CUSTOMER_HEADERS);
-            } catch (err) {
-              console.warn('[Returns] Gagal update saldo pelanggan:', err.message);
-            }
-          }
+      // Update remaining pada invoice
+      if (invoice._rowIndex) {
+        invoice.remaining = newRemaining;
+        const INVOICE_HEADERS = ['id', 'invoice_no', 'tx_date', 'tx_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by'];
+        try {
+          await updateRow('Invoices', invoice._rowIndex, invoice, INVOICE_HEADERS);
+        } catch (err) {
+          console.warn('[Returns] Gagal update sisa invoice:', err.message);
         }
       }
 
-      // 2. Jika ada uang kas yang harus dikembalikan (uang keluar / pengeluaran):
-      if (cashRefund > 0) {
-        const paymentRow = {
-          id: crypto.randomUUID(),
-          payment_date: todayStr,
-          payment_time: timeStr,
-          customer_id: invoice ? invoice.customer_id : '',
-          invoice_id: invoice ? invoice.id : '',
-          type: 'Pengeluaran',
-          amount: cashRefund,
-          method: 'Tunai',
-          note: `Retur #${retNo} (${invoice ? invoice.invoice_no : 'Ref'})`,
-          created_by: authUser.id
-        };
-        const PAYMENT_HEADERS = ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by'];
+      // Update saldo piutang customer jika ada pemotongan piutang
+      const oldRemaining = parseFloat(invoice.remaining || 0);
+      const debtDeduction = Math.min(Math.max(0, oldRemaining), totalAmount);
+      const cashRefund = Math.max(0, totalAmount - debtDeduction);
+
+      if (debtDeduction > 0 && customer && customer._rowIndex) {
+        const curBal = parseFloat(customer.balance || 0);
+        customer.balance = Math.max(0, curBal - debtDeduction);
+        const CUSTOMER_HEADERS = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
         try {
-          await appendRow('Payments', paymentRow, PAYMENT_HEADERS);
+          await updateRow('Customers', customer._rowIndex, customer, CUSTOMER_HEADERS);
         } catch (err) {
-          console.warn('[Returns] Gagal mencatat kas keluar pengembalian retur:', err.message);
+          console.warn('[Returns] Gagal update saldo pelanggan:', err.message);
+        }
+      }
+
+      // ATURAN STOK SALES (Langkah 4):
+      // Barang yang diretur pelanggan KEMBALI MENJADI STOK SALES pemilik invoice
+      const targetSalesId = invoice.sales_id || authUser.id;
+      const salesStocks = tabs.SalesStock || [];
+      const salesStockHeaders = ['sales_id', 'product_id', 'stock', 'updated_at'];
+      const nowStr = new Date().toISOString();
+
+      for (const it of data.items) {
+        const ssRow = salesStocks.find(s => s.sales_id === targetSalesId && s.product_id === it.product_id);
+        if (ssRow && ssRow._rowIndex) {
+          const currentStock = parseInt(ssRow.stock || 0, 10);
+          const newStock = currentStock + it.qty; // Menambah stok sales
+          ssRow.stock = newStock;
+          ssRow.updated_at = nowStr;
+          try {
+            await updateRow('SalesStock', ssRow._rowIndex, ssRow, salesStockHeaders);
+          } catch (e) {
+            console.warn('[Returns] Gagal update SalesStock:', e.message);
+          }
+        } else {
+          try {
+            await appendRow('SalesStock', {
+              sales_id: targetSalesId,
+              product_id: it.product_id,
+              stock: it.qty,
+              updated_at: nowStr
+            }, salesStockHeaders);
+          } catch (e) {
+            console.warn('[Returns] Gagal append SalesStock:', e.message);
+          }
         }
       }
 

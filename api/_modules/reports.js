@@ -79,40 +79,83 @@ export default async function handler(req, res) {
       periodPayments = payments.filter(p => p.payment_date && p.payment_date.startsWith(monthPrefix));
     }
 
-    // Ambil semua retur yang terkait dengan invoice periode ini
+    // Ambil semua retur yang valid (tidak ditolak)
     const validReturns = returns.filter(r => r.status !== 'Ditolak');
     const periodInvoiceIds = new Set(periodInvoices.map(inv => inv.id));
-    const periodReturns = validReturns.filter(r =>
-      periodInvoiceIds.has(r.invoice_id) || periodInvoiceIds.has(r.ref_id)
-    );
+    const allReturnItems = tabs.ReturnItems || [];
 
-    // Hitung total nilai retur periode ini
-    const totalReturnAmount = periodReturns.reduce((sum, r) => {
-      const directTotal = parseFloat(r.total || 0);
-      if (directTotal > 0) return sum + directTotal;
-      const itemsTot = returnItems
-        .filter(ri => ri.return_id === r.id)
-        .reduce((s, it) => s + ((parseInt(it.qty, 10) || 0) * (parseFloat(it.price) || 0)), 0);
-      return sum + itemsTot;
-    }, 0);
+    // Map retur per invoice ID untuk satu sumber kebenaran (menghindari duplikasi)
+    const returnsByInvoiceId = new Map();
+    validReturns.forEach(r => {
+      const targetInvId = r.ref_id || r.invoice_id;
+      if (!targetInvId) return;
+      if (!returnsByInvoiceId.has(targetInvId)) {
+        returnsByInvoiceId.set(targetInvId, []);
+      }
+      returnsByInvoiceId.get(targetInvId).push(r);
+    });
+
+    // Hitung metrik keuangan per invoice periode ini
+    let totalGrossSales = 0;
+    let totalReturnVal = 0;
+    let totalCashReceived = 0;
+    let totalCashRefund = 0;
+    let totalPeriodDebt = 0;
+
+    periodInvoices.forEach(inv => {
+      const invTotal = parseFloat(inv.subtotal || inv.total_due || 0);
+      const paid = parseFloat(inv.paid_amount || 0);
+      totalGrossSales += invTotal;
+      totalCashReceived += paid;
+
+      // Ambil retur milik invoice ini
+      const invReturns = returnsByInvoiceId.get(inv.id) || [];
+      const invReturnAmount = invReturns.reduce((sum, r) => {
+        const directTotal = parseFloat(r.total || 0);
+        if (directTotal > 0) return sum + directTotal;
+        const itemsTot = allReturnItems
+          .filter(ri => ri.return_id === r.id)
+          .reduce((s, it) => s + ((parseInt(it.qty, 10) || 0) * (parseFloat(it.price) || 0)), 0);
+        return sum + itemsTot;
+      }, 0);
+
+      totalReturnVal += invReturnAmount;
+
+      // Rumus keuangan baku:
+      // tagihan_bersih = total_invoice - nilai_retur
+      // refund_tunai   = MAX(0, total_bayar - tagihan_bersih)
+      // sisa_hutang    = MAX(0, tagihan_bersih - total_bayar)
+      const tagihanBersih = Math.max(0, invTotal - invReturnAmount);
+      const refundTunai = Math.max(0, paid - tagihanBersih);
+      const sisaHutang = Math.max(0, tagihanBersih - paid);
+
+      totalCashRefund += refundTunai;
+      totalPeriodDebt += sisaHutang;
+
+      // Simpan atribut terhitung di objek invoice agar konsisten untuk CSV & rincian
+      inv.calculated_return = invReturnAmount;
+      inv.calculated_net_due = tagihanBersih;
+      inv.calculated_refund = refundTunai;
+      inv.calculated_remaining = sisaHutang;
+      inv.calculated_net_cash = paid - refundTunai;
+    });
 
     // 1. Total Penjualan Kotor & Penjualan Bersih (Setelah Retur)
-    const grossSales = periodInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal || inv.total_due) || 0), 0);
+    const grossSales = totalGrossSales;
+    const totalReturnAmount = totalReturnVal;
     const netSales = Math.max(0, grossSales - totalReturnAmount);
 
-    // 2. Order Masuk
-    const totalOrdersCount = periodOrders.length;
-    // 3. Pembayaran Masuk Bersih (Pemasukan / Pelunasan dikurangi Pengembalian Uang Tunai Retur)
-    const totalPaymentsIn = periodPayments
-      .filter(p => p.type !== 'Pengeluaran')
-      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-    const totalRefunds = periodPayments
-      .filter(p => p.type === 'Pengeluaran')
-      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    // 2. Jumlah Transaksi Faktur (Periode Ini)
+    const totalOrdersCount = periodInvoices.length;
+
+    // 3. Pembayaran Masuk Bersih (Diterima dikurangi Refund Tunai Retur)
+    const totalPaymentsIn = totalCashReceived;
+    const totalRefunds = totalCashRefund;
     const netPayments = Math.max(0, totalPaymentsIn - totalRefunds);
 
-    // 4. Total Piutang Pelanggan
+    // 4. Total Piutang Pelanggan (Saldo Berjalan) & Hutang Periode Ini
     const totalReceivables = customers.reduce((sum, c) => sum + (parseFloat(c.balance) || 0), 0);
+    const periodDebtAmount = totalPeriodDebt;
 
     // 5. Pelanggan Terbanyak Belanja (Top 3)
     const customerSpendMap = {};
@@ -170,64 +213,23 @@ export default async function handler(req, res) {
       const userInvoices = periodInvoices.filter(inv => inv.sales_id === salesUser.id);
       const invoiceIds = new Set(userInvoices.map(inv => inv.id));
 
-      // Pembayaran uang masuk untuk sales ini di periode terpilih (baik dari faktur langsung maupun bayar piutang/bon)
-      const userPayments = periodPayments.filter(p =>
-        (p.created_by === salesUser.id || invoiceIds.has(p.invoice_id)) && p.type !== 'Pengeluaran'
+      // Hitung dari invoice milik sales ini (sumber kebenaran tunggal)
+      const userGrossOmset = userInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal || inv.total_due) || 0), 0);
+      const userReturnAmount = userInvoices.reduce((sum, inv) => sum + (inv.calculated_return || 0), 0);
+      const userOmsetBersih = Math.max(0, userGrossOmset - userReturnAmount);
+      const userCashReceived = userInvoices.reduce((sum, inv) => sum + (parseFloat(inv.paid_amount) || 0), 0);
+      const userCashRefund = userInvoices.reduce((sum, inv) => sum + (inv.calculated_refund || 0), 0);
+      const userNetCash = Math.max(0, userCashReceived - userCashRefund);
+      const userRemainingBon = userInvoices.reduce((sum, inv) => sum + (inv.calculated_remaining || 0), 0);
+
+      // Pelunasan bon lama terpisah via Payments (jika ada)
+      const userDirectPayments = periodPayments.filter(p =>
+        (p.created_by === salesUser.id || invoiceIds.has(p.invoice_id)) && (p.type === 'Piutang' || p.type === 'Pelunasan')
       );
-      const userRefunds = periodPayments.filter(p =>
-        (p.created_by === salesUser.id || invoiceIds.has(p.invoice_id)) && p.type === 'Pengeluaran'
-      );
-
-      // Rincian penerimaan uang:
-      // Uang yang dibayar langsung saat faktur terbit:
-      // Faktur bisa memuat pembayaran barang hari ini + pelunasan bon sebelumnya (previous_balance).
-      let directItemCash = 0; // Uang belanja barang hari ini
-      let invoiceDebtPaid = 0; // Uang bon lama yang ikut dibayar di kasir faktur hari ini
-
-      userInvoices.forEach(inv => {
-        const paid = parseFloat(inv.paid_amount || 0);
-        const subtotal = parseFloat(inv.subtotal || 0);
-        const prevBal = parseFloat(inv.previous_balance || 0);
-        if (paid > 0) {
-          // Bagian untuk belanja barang hari ini (maksimal subtotal)
-          const forItems = Math.min(paid, subtotal);
-          directItemCash += forItems;
-          // Sisanya adalah pelunasan bon lama
-          const forPrevBal = Math.max(0, paid - subtotal);
-          invoiceDebtPaid += forPrevBal;
-        }
-      });
-
-      // Penagihan piutang / cicilan bon yang dibayar terpisah lewat form 'Terima Pembayaran'
-      const standaloneDebtPayments = userPayments.filter(p => p.type === 'Piutang' || p.type === 'Pelunasan');
-      const standaloneDebtAmount = standaloneDebtPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-
-      // Total pelunasan bon lama yang diterima hari ini
-      const totalDebtCollected = invoiceDebtPaid + standaloneDebtAmount;
-
-      // Nilai retur invoice milik sales ini
-      const userReturns = periodReturns.filter(r => invoiceIds.has(r.invoice_id) || invoiceIds.has(r.ref_id));
-      const userReturnAmount = userReturns.reduce((sum, r) => {
-        const directTotal = parseFloat(r.total || 0);
-        if (directTotal > 0) return sum + directTotal;
-        const itemsTot = returnItems
-          .filter(ri => ri.return_id === r.id)
-          .reduce((s, it) => s + ((parseInt(it.qty, 10) || 0) * (parseFloat(it.price) || 0)), 0);
-        return sum + itemsTot;
-      }, 0);
+      const standaloneDebtAmount = userDirectPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
       const totalFaktur = userInvoices.length;
-      const totalOmsetKotor = userInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal || inv.total_due) || 0), 0);
-      const totalOmsetBersih = Math.max(0, totalOmsetKotor - userReturnAmount);
-      const totalUangMasuk = userPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-      const totalUangRetur = userRefunds.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-      const uangBersih = Math.max(0, totalUangMasuk - totalUangRetur);
-
-      // Sisa piutang/bon invoice periode ini
-      const sisaBon = userInvoices.reduce((sum, inv) => sum + (parseFloat(inv.remaining) || 0), 0);
-
-      // Jumlah faktur lunas
-      const fakturLunas = userInvoices.filter(inv => parseFloat(inv.remaining || 0) <= 0).length;
+      const fakturLunas = userInvoices.filter(inv => (inv.calculated_remaining || 0) <= 0).length;
 
       return {
         sales_id: salesUser.id,
@@ -236,15 +238,15 @@ export default async function handler(req, res) {
         branch_id: salesUser.branch_id,
         total_invoices: totalFaktur,
         invoices_lunas: fakturLunas,
-        total_omset: totalOmsetBersih,
-        gross_omset: totalOmsetKotor,
+        total_omset: userOmsetBersih,
+        gross_omset: userGrossOmset,
         return_amount: userReturnAmount,
-        cash_received: totalUangMasuk,
-        invoice_paid: directItemCash,
-        debt_paid: totalDebtCollected,
-        refund_amount: totalUangRetur,
-        net_cash: uangBersih,
-        remaining_bon: sisaBon
+        cash_received: userCashReceived,
+        invoice_paid: userCashReceived,
+        debt_paid: standaloneDebtAmount,
+        refund_amount: userCashRefund,
+        net_cash: userNetCash + standaloneDebtAmount,
+        remaining_bon: userRemainingBon
       };
     }).sort((a, b) => b.net_cash - a.net_cash);
 
@@ -265,7 +267,8 @@ export default async function handler(req, res) {
           total_payments: netPayments,
           gross_payments: totalPaymentsIn,
           total_refunds: totalRefunds,
-          total_receivables: totalReceivables
+          total_receivables: totalReceivables,
+          period_debt: periodDebtAmount
         },
         sales_performance: salesPerformance,
         sales_options: salesOptions,

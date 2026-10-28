@@ -165,15 +165,15 @@
           <div v-if="isAdmin && selectedReturn.status === 'Menunggu'" class="action-buttons">
             <button class="btn-action btn-approve" :disabled="actionLoading" @click="handleAction('approve')">
               <Icon name="check" size="16" />
-              <span>Setujui Retur (Pindahkan Stok)</span>
+              <span>Setujui Retur</span>
             </button>
             <button class="btn-action btn-reject" :disabled="actionLoading" @click="handleAction('reject')">
               <Icon name="x" size="16" />
-              <span>Tolak</span>
+              <span>Tolak (Kembalikan Penyesuaian)</span>
             </button>
           </div>
           <p v-if="isAdmin && selectedReturn.status === 'Menunggu'" class="hint">
-            Saat disetujui: stok sales akan berkurang dan stok admin/gudang bertambah otomatis.
+            Catatan: Barang retur pelanggan tetap menjadi stok sales untuk dijual kembali.
           </p>
         </div>
       </div>

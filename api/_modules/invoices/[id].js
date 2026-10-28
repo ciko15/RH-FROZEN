@@ -84,6 +84,7 @@ export default async function handler(req, res) {
     const rawPaid = parseFloat(invoice.paid_amount || 0);
     const adjustedTotalDue = Math.max(0, rawTotalDue - totalReturnedAmount);
     const adjustedRemaining = Math.max(0, adjustedTotalDue - rawPaid);
+    const cashRefund = Math.max(0, rawPaid - adjustedTotalDue);
 
     const fullInvoice = {
       ...invoice,
@@ -98,6 +99,7 @@ export default async function handler(req, res) {
       total_returned_amount: totalReturnedAmount,
       adjusted_total_due: adjustedTotalDue,
       remaining: adjustedRemaining,
+      cash_refund: cashRefund,
       config: {
         business_name: getCfg('business_name') || 'RH FROZEN FOOD',
         business_address: getCfg('business_address') || '',

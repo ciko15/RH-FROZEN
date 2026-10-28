@@ -52,8 +52,8 @@
       </div>
 
       <div class="stat-card blue">
-        <span class="label">Order Masuk</span>
-        <span class="val">{{ formatNumber(summary.total_orders) }} Order</span>
+        <span class="label">Transaksi Faktur</span>
+        <span class="val">{{ formatNumber(summary.total_orders) }} Transaksi</span>
         <span class="sub">Periode Ini</span>
       </div>
 
@@ -61,7 +61,7 @@
         <span class="label">Uang Masuk</span>
         <span class="val">Rp {{ formatNumber(summary.total_payments) }}</span>
         <span v-if="summary.total_refunds > 0" class="sub" style="color: #b91c1c;">
-          (Diterima: Rp {{ formatNumber(summary.gross_payments) }} - Retur: Rp {{ formatNumber(summary.total_refunds) }})
+          (Diterima: Rp {{ formatNumber(summary.gross_payments) }} - Refund tunai: Rp {{ formatNumber(summary.total_refunds) }})
         </span>
         <span v-else class="sub">Pembayaran & Pelunasan Bersih</span>
       </div>
@@ -69,7 +69,10 @@
       <div class="stat-card orange">
         <span class="label">Total Piutang</span>
         <span class="val">Rp {{ formatNumber(summary.total_receivables) }}</span>
-        <span class="sub">Saldo Berjalan</span>
+        <span v-if="summary.period_debt !== undefined && summary.period_debt > 0" class="sub" style="color: #d97706;">
+          (Hutang Periode: Rp {{ formatNumber(summary.period_debt) }})
+        </span>
+        <span v-else class="sub">Saldo Berjalan</span>
       </div>
     </div>
 
@@ -289,19 +292,27 @@ function exportCsv() {
   }
 
   let csvContent = 'data:text/csv;charset=utf-8,';
-  csvContent += 'No Invoice,Tanggal,Pelanggan,Metode,Total Belanja,Bon Sebelumnya,Total Tagihan,Dibayar,Sisa\n';
+  csvContent += 'No Invoice,Tanggal,Pelanggan,Metode,Total Belanja,Pembayaran Diterima,Retur,Refund Tunai,Uang Masuk Bersih,Sisa Hutang\n';
 
   invoiceList.value.forEach(inv => {
+    const belanja = parseFloat(inv.subtotal || inv.total_due || 0);
+    const dibayar = parseFloat(inv.paid_amount || 0);
+    const retur = parseFloat(inv.calculated_return || 0);
+    const refund = parseFloat(inv.calculated_refund || 0);
+    const uangBersih = parseFloat(inv.calculated_net_cash !== undefined ? inv.calculated_net_cash : (dibayar - refund));
+    const sisaHutang = parseFloat(inv.calculated_remaining !== undefined ? inv.calculated_remaining : inv.remaining || 0);
+
     const row = [
       inv.invoice_no,
-      inv.invoice_date,
+      inv.invoice_date || inv.tx_date,
       `"${inv.customer_name}"`,
       inv.pay_method,
-      inv.subtotal,
-      inv.previous_balance,
-      inv.total_due,
-      inv.paid_amount,
-      inv.remaining
+      belanja,
+      dibayar,
+      retur,
+      refund,
+      uangBersih,
+      sisaHutang
     ].join(',');
     csvContent += row + '\n';
   });
