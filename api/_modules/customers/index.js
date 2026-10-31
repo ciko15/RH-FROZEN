@@ -16,6 +16,7 @@ const customerSchema = z.object({
   sales_id: z.string().optional(),
   credit_limit: z.number().min(0, 'Batas kredit tidak boleh negatif').optional().default(0),
   term_days: z.number().int().min(1, 'Jatuh tempo minimal 1 hari').optional().default(14),
+  balance: z.number().min(0, 'Saldo hutang tidak boleh negatif').optional(),
   active: z.boolean().optional().default(true)
 });
 
@@ -174,6 +175,7 @@ export default async function handler(req, res) {
         sales_id: (authUser.role === 'admin' || authUser.role === 'manajer') && data.sales_id !== undefined ? data.sales_id : (cust.sales_id || (authUser.role === 'sales' ? authUser.id : '')),
         credit_limit: (authUser.role === 'admin' || authUser.role === 'manajer') && data.credit_limit !== undefined ? data.credit_limit : cust.credit_limit,
         term_days: (authUser.role === 'admin' || authUser.role === 'manajer') && data.term_days !== undefined ? data.term_days : cust.term_days,
+        balance: (authUser.role === 'admin' || authUser.role === 'manajer') && data.balance !== undefined ? data.balance : (cust.balance !== undefined ? cust.balance : 0),
         active: data.active !== undefined ? (data.active ? 'TRUE' : 'FALSE') : (cust.active || 'TRUE')
       };
 

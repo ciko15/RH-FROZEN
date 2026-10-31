@@ -181,11 +181,23 @@
           <div class="form-row">
             <div class="form-group">
               <label>Batas Kredit (0 = Tanpa Batas)</label>
-              <input v-model.number="newCust.credit_limit" type="number" min="0" />
+              <input 
+                :value="formatInputNumber(newCust.credit_limit)" 
+                @input="newCust.credit_limit = parseInputNumber($event.target.value)" 
+                type="text" 
+                inputmode="numeric" 
+                placeholder="0" 
+              />
             </div>
             <div class="form-group">
               <label>Tempo (Hari)</label>
-              <input v-model.number="newCust.term_days" type="number" min="1" />
+              <input 
+                :value="formatInputNumber(newCust.term_days)" 
+                @input="newCust.term_days = parseInputNumber($event.target.value)" 
+                type="text" 
+                inputmode="numeric" 
+                placeholder="14" 
+              />
             </div>
           </div>
         </div>
@@ -247,12 +259,43 @@
           <div class="form-row" v-if="user?.role === 'admin' || user?.role === 'manajer'">
             <div class="form-group">
               <label>Batas Kredit (Rp)</label>
-              <input v-model.number="editCust.credit_limit" type="number" min="0" />
+              <input 
+                :value="formatInputNumber(editCust.credit_limit)" 
+                @input="editCust.credit_limit = parseInputNumber($event.target.value)" 
+                type="text" 
+                inputmode="numeric" 
+                placeholder="0" 
+              />
             </div>
             <div class="form-group">
               <label>Tempo (Hari)</label>
-              <input v-model.number="editCust.term_days" type="number" min="1" />
+              <input 
+                :value="formatInputNumber(editCust.term_days)" 
+                @input="editCust.term_days = parseInputNumber($event.target.value)" 
+                type="text" 
+                inputmode="numeric" 
+                placeholder="14" 
+              />
             </div>
+          </div>
+
+          <!-- Edit Hutang / Piutang Pelanggan -->
+          <div class="form-group" v-if="user?.role === 'admin' || user?.role === 'manajer'">
+            <label style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Saldo Bon / Hutang Piutang (Rp)</span>
+              <span v-if="editCust.balance > 0" class="badge badge-dibatalkan" style="font-size: 11px;">Ada Tagihan</span>
+            </label>
+            <input 
+              :value="formatInputNumber(editCust.balance)" 
+              @input="editCust.balance = parseInputNumber($event.target.value)" 
+              type="text" 
+              inputmode="numeric" 
+              placeholder="0" 
+              style="font-weight: 600; color: #dc2626;"
+            />
+            <small style="font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block;">
+              * Perubahan saldo hutang ini langsung memperbarui data piutang pelanggan di sistem & spreadsheet.
+            </small>
           </div>
 
           <div class="form-group">
@@ -287,6 +330,19 @@ import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import { formatNumber } from '../utils/format.js';
+
+function formatInputNumber(val) {
+  if (val === '' || val === null || val === undefined) return '';
+  const num = typeof val === 'number' ? val : Number(String(val).replace(/\D/g, ''));
+  if (isNaN(num)) return '';
+  return new Intl.NumberFormat('id-ID').format(num);
+}
+
+function parseInputNumber(val) {
+  if (!val) return 0;
+  const cleaned = String(val).replace(/\D/g, '');
+  return cleaned ? parseInt(cleaned, 10) : 0;
+}
 
 const authStore = useAuthStore();
 const appStore = useAppStore();
@@ -349,6 +405,7 @@ const editCust = ref({
   sales_id: '',
   credit_limit: 0,
   term_days: 14,
+  balance: 0,
   active: true
 });
 
@@ -362,6 +419,7 @@ function openEditModal(c) {
     sales_id: c.sales_id || '',
     credit_limit: c.credit_limit || 0,
     term_days: c.term_days || 14,
+    balance: c.balance || 0,
     active: c.active !== false
   };
   showEditModal.value = true;
@@ -378,6 +436,9 @@ async function submitUpdateCustomer() {
       name: updatedItem.name,
       address: updatedItem.address,
       phone: updatedItem.phone,
+      credit_limit: updatedItem.credit_limit,
+      term_days: updatedItem.term_days,
+      balance: updatedItem.balance,
       active: updatedItem.active
     };
   }
