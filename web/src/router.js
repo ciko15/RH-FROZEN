@@ -20,6 +20,7 @@ import Returns from './views/Returns.vue';
 import Purchases from './views/Purchases.vue';
 import StockOpname from './views/StockOpname.vue';
 import Targets from './views/Targets.vue';
+import Tracking from './views/Tracking.vue';
 import Users from './views/Users.vue';
 import AuditLog from './views/AuditLog.vue';
 import Placeholder from './views/Placeholder.vue';
@@ -126,6 +127,12 @@ const routes = [
     name: 'Targets',
     component: Targets,
     meta: { showBack: true }
+  },
+  {
+    path: '/tracking',
+    name: 'Tracking',
+    component: Tracking,
+    meta: { showBack: true, roles: ['admin', 'manajer'] }
   },
   {
     path: '/history',

@@ -50,8 +50,10 @@ export default async function handler(req, res) {
 
       order.status = 'Dibatalkan';
       order.note = (order.note ? order.note + ' | ' : '') + 'Batal: ' + cancelReason;
+      order.updated_at = new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 19);
+      order.cancelled_by = authUser.id;
 
-      const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at'];
+      const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by'];
       if (order._rowIndex) {
         await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
       }

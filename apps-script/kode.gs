@@ -768,7 +768,11 @@ function cancelOrder(payload) {
     }
     order.status = 'Dibatalkan';
     order.note = (order.note ? order.note + ' | ' : '') + 'Batal: ' + (reason || '');
-    updateSheetRow('Orders', order._rowIndex, order, ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at']);
+    order.updated_at = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    order.cancelled_by = user_id || '';
+    ensureSheetHeader('Orders', 'updated_at', 12);
+    ensureSheetHeader('Orders', 'cancelled_by', 13);
+    updateSheetRow('Orders', order._rowIndex, order, ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by']);
     writeAuditLog(user_id, 'CANCEL_STOCK_REQUEST', { order_id, order_no: order.order_no, reason });
     return { ok: true, data: order, message: 'Permintaan stok berhasil dibatalkan' };
   } finally {

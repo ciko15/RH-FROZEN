@@ -56,6 +56,10 @@
           <div class="icon-box"><Icon name="targets" size="18" class="nav-svg" /></div>
           <span class="label">Target Sales</span>
         </router-link>
+        <router-link to="/tracking" class="sidebar-link" active-class="active" v-if="canManageData">
+          <div class="icon-box"><Icon name="orders" size="18" class="nav-svg" /></div>
+          <span class="label">Tracking Permintaan</span>
+        </router-link>
         <router-link to="/history" class="sidebar-link" active-class="active">
           <div class="icon-box"><Icon name="history" size="18" class="nav-svg" /></div>
           <span class="label">Riwayat Transaksi</span>

@@ -151,6 +151,9 @@ body {
   .stats-grid {
     grid-template-columns: repeat(4, 1fr) !important;
   }
+  .tracking-page .stats-grid {
+    grid-template-columns: repeat(5, 1fr) !important;
+  }
 
   .orders-grid, .invoices-grid {
     display: grid !important;

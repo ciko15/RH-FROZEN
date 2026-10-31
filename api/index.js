@@ -72,6 +72,10 @@ export default async function handler(req, res) {
       const { default: h } = await import('./_modules/targets.js');
       return await h(req, res);
     }
+    if (pathname === '/api/tracking') {
+      const { default: h } = await import('./_modules/tracking.js');
+      return await h(req, res);
+    }
     if (pathname === '/api/audit') {
       const { default: h } = await import('./_modules/audit.js');
       return await h(req, res);
