@@ -79,6 +79,19 @@
         <span class="m-arrow">›</span>
       </router-link>
 
+      <router-link to="/tracking" class="menu-item card" v-if="canManageData">
+        <div class="m-left">
+          <div class="m-icon-box icon-tracking">
+            <Icon name="orders" size="20" />
+          </div>
+          <div class="m-text">
+            <span class="m-title">Tracking Permintaan</span>
+            <span class="m-sub">Progress barang keluar, job gantung & batal</span>
+          </div>
+        </div>
+        <span class="m-arrow">›</span>
+      </router-link>
+
       <router-link to="/history" class="menu-item card">
         <div class="m-left">
           <div class="m-icon-box icon-history">
@@ -289,6 +302,7 @@ async function handleLogout() {
 .icon-receivables { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
 .icon-reports     { background: rgba(16, 185, 129, 0.15); color: #34d399; }
 .icon-targets     { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.icon-tracking    { background: rgba(2, 132, 199, 0.15); color: #38bdf8; }
 .icon-history     { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
 .icon-customers   { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
 .icon-branches    { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
