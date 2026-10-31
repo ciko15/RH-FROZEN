@@ -271,19 +271,50 @@
             <span>{{ p.name }}</span><strong>{{ formatNumber(p.qty) }} pcs</strong>
           </div>
 
-          <h4 class="sec-title">Riwayat Permintaan</h4>
-          <div v-if="selected.orders.length === 0" class="text-muted small">Tidak ada permintaan.</div>
-          <div v-for="o in selected.orders" :key="o.id" class="order-row">
+          <!-- Rangkuman Akumulasi Produk Masih Proses (Jika ada > 1 request proses) -->
+          <div v-if="pendingProductsSummary.length > 0" class="pending-summary-box">
+            <div class="pending-summary-head">
+              <div>
+                <strong class="pending-summary-title">Total Akumulasi Barang Diminta (Status Proses)</strong>
+                <small class="text-muted d-block">{{ formatNumber(pendingProductsSummary.length) }} jenis barang · {{ formatNumber(totalPendingSummaryQty) }} pcs dari {{ formatNumber(pendingOrdersCount) }} orderan gantung</small>
+              </div>
+              <button class="btn-toggle-mini" @click="showGroupedPending = !showGroupedPending">
+                {{ showGroupedPending ? 'Sembunyikan ▲' : 'Buka Rincian ▼' }}
+              </button>
+            </div>
+            <div v-if="showGroupedPending" class="pending-summary-items">
+              <div v-for="p in pendingProductsSummary" :key="p.product_id" class="pending-summary-row">
+                <span class="p-name">{{ p.name }}</span>
+                <span class="p-qty font-semibold text-warning">{{ formatNumber(p.qty) }} pcs</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec-title-wrap">
+            <h4 class="sec-title">Riwayat Permintaan</h4>
+            <div class="view-mode-toggle" v-if="selected.orders.length > 0">
+              <button :class="{ active: !mergePendingItems }" @click="mergePendingItems = false" title="Tampilkan rincian per order">Per Order</button>
+              <button :class="{ active: mergePendingItems }" @click="mergePendingItems = true" title="Gabungkan produk yang masih status Proses">Gabung Proses</button>
+            </div>
+          </div>
+
+          <div v-if="displayOrders.length === 0" class="text-muted small">Tidak ada permintaan.</div>
+          <div v-for="o in displayOrders" :key="o.id" class="order-row" :class="{ 'merged-order': o.is_merged }">
             <div class="p-head">
-              <strong>{{ o.order_no }}</strong>
+              <div>
+                <strong>{{ o.order_no }}</strong>
+                <span v-if="o.is_merged" class="badge-merged">Gabungan {{ o.merged_count }} Order</span>
+              </div>
               <span class="pill" :class="statusClass(o.status)">{{ o.status }}</span>
             </div>
             <small class="text-muted">
-              Diminta {{ o.request_date }} {{ o.request_time }}<span v-if="o.ship_date"> · Dikirim {{ o.ship_date }}</span><span v-if="o.cancel_date"> · Batal {{ o.cancel_date }}</span>
+              {{ o.is_merged ? o.subtitle : `Diminta ${o.request_date} ${o.request_time}` }}
+              <span v-if="o.ship_date"> · Dikirim {{ o.ship_date }}</span>
+              <span v-if="o.cancel_date"> · Batal {{ o.cancel_date }}</span>
             </small>
             <div v-if="o.cancel_reason" class="cancel-reason">“{{ o.cancel_reason }}”<span v-if="o.cancelled_by" class="text-muted"> — {{ o.cancelled_by }}</span></div>
             <div class="p-items">
-              <span v-for="it in o.items" :key="it.product_id" class="item-chip">
+              <span v-for="it in o.items" :key="it.product_id" class="item-chip" :class="{ 'chip-merged': o.is_merged }">
                 {{ it.name }} × {{ it.qty }}<template v-if="o.status === 'Dikirim' && it.qty_shipped !== it.qty"> → {{ it.qty_shipped }}</template>
               </span>
             </div>
@@ -312,6 +343,65 @@ const data = ref(null);
 const tab = ref('matrix');
 const search = ref('');
 const selected = ref(null);
+const mergePendingItems = ref(false);
+const showGroupedPending = ref(true);
+
+// Hitung rekapitulasi akumulasi barang yang masih berstatus 'Proses' untuk sales terpilih
+const pendingProductsSummary = computed(() => {
+  if (!selected.value || !selected.value.orders) return [];
+  const pendingOrders = selected.value.orders.filter(o => o.status === 'Proses');
+  const prodMap = new Map();
+  for (const o of pendingOrders) {
+    for (const it of (o.items || [])) {
+      const pid = it.product_id;
+      const cur = prodMap.get(pid) || { product_id: pid, name: it.name, qty: 0 };
+      cur.qty += (parseInt(it.qty, 10) || 0);
+      prodMap.set(pid, cur);
+    }
+  }
+  return Array.from(prodMap.values()).sort((a, b) => b.qty - a.qty);
+});
+
+const totalPendingSummaryQty = computed(() => {
+  return pendingProductsSummary.value.reduce((sum, p) => sum + p.qty, 0);
+});
+
+const pendingOrdersCount = computed(() => {
+  if (!selected.value || !selected.value.orders) return 0;
+  return selected.value.orders.filter(o => o.status === 'Proses').length;
+});
+
+// Daftar order yang ditampilkan: Jika toggle "Gabung Proses" aktif, semua order Proses disatukan menjadi 1 kartu akumulasi
+const displayOrders = computed(() => {
+  if (!selected.value || !selected.value.orders) return [];
+  const orders = selected.value.orders;
+  if (!mergePendingItems.value) return orders;
+
+  const pendingOrders = orders.filter(o => o.status === 'Proses');
+  const otherOrders = orders.filter(o => o.status !== 'Proses');
+
+  if (pendingOrders.length <= 1) return orders;
+
+  const mergedItems = pendingProductsSummary.value.map(p => ({
+    product_id: p.product_id,
+    name: p.name,
+    qty: p.qty,
+    qty_shipped: 0
+  }));
+
+  const mergedPendingCard = {
+    id: 'merged-pending-' + selected.value.sales_id,
+    order_no: `AKUMULASI ${pendingOrders.length} PERMINTAAN PROSES`,
+    status: 'Proses',
+    is_merged: true,
+    merged_count: pendingOrders.length,
+    subtitle: `Gabungan dari: ${pendingOrders.map(p => p.order_no).join(', ')}`,
+    total_qty: totalPendingSummaryQty.value,
+    items: mergedItems
+  };
+
+  return [mergedPendingCard, ...otherOrders];
+});
 
 const periodLabel = computed(() => {
   if (mode.value === 'daily') return selectedDate.value === wibToday ? 'Hari Ini' : selectedDate.value;
@@ -524,7 +614,24 @@ onMounted(fetchData);
 .mini-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .mini-stats div { background: var(--bg, #f8fafc); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; }
 .mini-stats span { font-size: 11px; color: var(--text-muted); }
-.sec-title { font-size: 13px; margin: 18px 0 8px; }
-.prod-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border, #e2e8f0); font-size: 13px; }
-.order-row { padding: 10px 0; border-bottom: 1px solid var(--border, #f1f5f9); }
+.sec-title-wrap { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 10px; }
+.sec-title-wrap .sec-title { margin: 0; }
+
+.view-mode-toggle { display: inline-flex; background: var(--bg, #f1f5f9); border-radius: 8px; padding: 2px; }
+.view-mode-toggle button { border: none; background: transparent; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; color: var(--text-muted); transition: all .2s; }
+.view-mode-toggle button.active { background: var(--primary, #1d4ed8); color: #fff; box-shadow: 0 1px 4px rgba(29, 78, 216, .25); }
+
+.pending-summary-box { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 12px 14px; margin-top: 14px; }
+.pending-summary-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pending-summary-title { font-size: 13px; color: #b45309; }
+.d-block { display: block; }
+.btn-toggle-mini { border: none; background: rgba(245, 158, 11, 0.15); color: #b45309; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.pending-summary-items { margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(245, 158, 11, 0.3); max-height: 180px; overflow-y: auto; }
+.pending-summary-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px; }
+.pending-summary-row:not(:last-child) { border-bottom: 1px solid rgba(245, 158, 11, 0.1); }
+.text-warning { color: #d97706; }
+
+.merged-order { border-left: 4px solid #f59e0b; background: rgba(245, 158, 11, 0.04); }
+.badge-merged { font-size: 10px; background: #fef3c7; color: #b45309; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+.chip-merged { background: #fef3c7; color: #92400e; font-weight: 600; }
 </style>
