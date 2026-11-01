@@ -5,14 +5,31 @@
         <button class="tab-btn" :class="{ active: tab === 'pos' }" @click="tab = 'pos'">
           🛒 Kasir Penjualan
         </button>
+        <button class="tab-btn" :class="{ active: tab === 'drafts' }" @click="tab = 'drafts'">
+          📝 Draf Pesanan ({{ drafts.length }})
+        </button>
         <button class="tab-btn" :class="{ active: tab === 'history' }" @click="tab = 'history'">
           📄 Riwayat Transaksi ({{ fmt(transactions.length) }})
         </button>
       </div>
     </div>
 
-    <!-- TAB 1: KASIR TRANSAKSI BARU -->
+    <!-- TAB 1: KASIR TRANSAKSI BARU / MODE EDIT TRANSAKSI -->
     <div v-if="tab === 'pos'" class="pos-body">
+      <!-- Banner Mode Edit Transaksi Aktif -->
+      <div v-if="editingInvoiceId" class="active-edit-banner card">
+        <div class="edit-banner-left">
+          <div class="edit-banner-title">
+            <Icon name="edit" size="18" />
+            <strong>Sedang Mengedit Transaksi #{{ editingInvoiceNo }}</strong>
+          </div>
+          <span class="edit-banner-desc">Ubah barang belanja, tambah/kurangi barang di kasir, ubah nominal pembayaran, lalu klik Simpan Perubahan.</span>
+        </div>
+        <button type="button" class="btn-cancel-edit-mode" @click="cancelEditInvoiceMode" title="Batalkan edit dan kembali ke transaksi baru">
+          <Icon name="x" size="14" /> Batalkan Edit
+        </button>
+      </div>
+
       <!-- Pilih Pelanggan -->
       <div class="card p-14 pos-section-card">
         <div class="sec-title">
@@ -227,6 +244,14 @@
                   <div>Rp {{ fmt((it.qty * it.price) - (it.discount || 0)) }}</div>
                   <div v-if="it.discount > 0" class="item-disc-tag">Potongan: -Rp {{ fmt(it.discount) }}</div>
                 </div>
+                <button
+                  type="button"
+                  class="btn-remove-cart-item"
+                  @click="removeCartItem(idx)"
+                  title="Hapus barang dari keranjang"
+                >
+                  <Icon name="trash" size="14" />
+                </button>
               </div>
             </div>
 
@@ -313,14 +338,85 @@
               <label>Catatan Transaksi</label>
               <input v-model="txNote" type="text" placeholder="Catatan opsional..." />
             </div>
-            <button
-              class="btn-checkout"
-              :disabled="submitting || !selectedCustomerId || cart.length === 0"
-              @click="submitTransaction"
-            >
-              <Icon name="check" size="18" />
-              <span>{{ submitting ? 'Menyimpan...' : 'Selesaikan Transaksi (Cetak/Simpan)' }}</span>
-            </button>
+            <div class="pos-checkout-actions">
+              <button
+                v-if="!editingInvoiceId"
+                type="button"
+                class="btn-save-draft"
+                :disabled="cart.length === 0"
+                @click="saveCurrentCartAsDraft"
+                title="Simpan sementara draf transaksi ini"
+              >
+                <Icon name="bookmark" size="16" />
+                <span>Simpan Draf (Hold)</span>
+              </button>
+              <button
+                v-else
+                type="button"
+                class="btn-cancel-edit-mode"
+                @click="cancelEditInvoiceMode"
+              >
+                <Icon name="x" size="16" />
+                <span>Batal Edit</span>
+              </button>
+              <button
+                class="btn-checkout flex-1"
+                :class="{ 'btn-update-checkout': !!editingInvoiceId }"
+                :disabled="submitting || !selectedCustomerId || cart.length === 0"
+                @click="submitTransaction"
+              >
+                <Icon name="check" size="18" />
+                <span>{{ submitting ? 'Menyimpan...' : (editingInvoiceId ? 'Simpan Perubahan Transaksi' : 'Selesaikan Transaksi (Cetak/Simpan)') }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB DRAF: DAFTAR DRAF TRANSAKSI TERSIMPAN -->
+    <div v-if="tab === 'drafts'" class="pos-drafts">
+      <div v-if="drafts.length === 0" class="empty">
+        <Icon name="bookmark" size="38" class="empty-icon" />
+        <h3>Belum Ada Draf Tersimpan</h3>
+        <p>Anda dapat menyimpan sementara keranjang penjualan pelanggan sebagai draf untuk diedit/dilanjutkan sewaktu-waktu.</p>
+      </div>
+      <div v-else class="draft-list">
+        <div v-for="d in drafts" :key="d.id" class="card draft-card">
+          <div class="draft-top">
+            <div class="draft-title-wrap">
+              <strong><Icon name="bookmark" size="14" /> {{ d.title || 'Draf Transaksi' }}</strong>
+              <small class="text-muted">{{ d.saved_at }}</small>
+            </div>
+            <span class="badge badge-proses">Draf ({{ d.items.length }} item)</span>
+          </div>
+
+          <div class="draft-cust font-bold">
+            Pelanggan: {{ d.customer_name || 'Umum' }}
+          </div>
+
+          <div class="draft-items-preview">
+            <span v-for="it in d.items.slice(0, 3)" :key="it.product_id" class="draft-item-tag">
+              {{ it.product_name }} ({{ it.qty }}x)
+            </span>
+            <span v-if="d.items.length > 3" class="draft-item-more">
+              +{{ d.items.length - 3 }} lainnya
+            </span>
+          </div>
+
+          <div class="draft-bottom">
+            <div class="draft-total">
+              <span>Total Belanja:</span>
+              <strong class="text-primary font-bold">Rp {{ fmt(d.total) }}</strong>
+            </div>
+            <div class="draft-actions">
+              <button type="button" class="btn-use-draft" @click="loadDraftToCart(d)" title="Buka & Lanjutkan Transaksi">
+                <Icon name="play" size="13" /> Lanjutkan Kasir
+              </button>
+              <button type="button" class="btn-del-draft" @click="deleteDraft(d.id)" title="Hapus Draf">
+                <Icon name="trash" size="14" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -330,16 +426,16 @@
     <div v-if="tab === 'history'" class="pos-history">
       <div v-if="loadingInvoices" class="empty">Memuat riwayat transaksi...</div>
       <div v-else-if="transactions.length === 0" class="empty">Belum ada transaksi kasir.</div>
-          <div v-else class="inv-list">
-            <div
-              v-for="tx in transactions"
-              :key="tx.id + tx.type"
-              class="card inv-card"
+      <div v-else class="inv-list">
+        <div
+          v-for="tx in transactions"
+          :key="tx.id + tx.type"
+          class="card inv-card"
               :class="{
                 'payment-card': tx.type === 'Pelunasan',
                 'has-return-card': tx.has_return
               }"
-              @click="tx.type === 'Invoice' && viewInvoice(tx)"
+              @click="onTransactionCardClick(tx)"
             >
               <div class="inv-top">
                 <strong><Icon :name="tx.type === 'Invoice' ? 'file-text' : 'dollar-sign'" size="14" /> {{ tx.title }}</strong>
@@ -364,6 +460,35 @@
               <small v-if="tx.type === 'Pelunasan' && tx.method" class="payment-method">
                 Metode: {{ tx.method }}
               </small>
+
+              <div class="inv-card-actions" @click.stop>
+                <button
+                  v-if="tx.type === 'Invoice'"
+                  type="button"
+                  class="btn-card-edit"
+                  @click.stop="loadInvoiceToCart(tx)"
+                  title="Edit data transaksi, tambah/kurang barang di keranjang kasir"
+                >
+                  <Icon name="edit" size="13" /> Edit di Kasir (Ubah Barang/Pelanggan)
+                </button>
+                <button
+                  v-else-if="tx.type === 'Pelunasan'"
+                  type="button"
+                  class="btn-card-edit"
+                  @click.stop="openEditPaymentModal(tx)"
+                  title="Edit nominal, pelanggan, tanggal, atau metode pembayaran"
+                >
+                  <Icon name="edit" size="13" /> Edit Pembayaran
+                </button>
+                <button
+                  type="button"
+                  class="btn-card-view"
+                  @click.stop="onTransactionCardClick(tx)"
+                  title="Lihat rincian"
+                >
+                  <Icon name="eye" size="13" /> Rincian
+                </button>
+              </div>
             </div>
           </div>
     </div>
@@ -376,7 +501,96 @@
           <button class="sheet-close" @click="activeInvoice = null"><Icon name="x" size="18" /></button>
         </div>
         <div class="sheet-body">
-          <InvoiceView :invoice="activeInvoice" />
+          <InvoiceView :invoice="activeInvoice" @edit="openEditInvoiceModal" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Edit / Hapus Pelunasan Piutang -->
+    <div v-if="showPaymentModal && selectedPayment" class="sheet-overlay" @click.self="showPaymentModal = false">
+      <div class="sheet-content edit-payment-sheet">
+        <div class="sheet-header">
+          <div>
+            <h3>Rincian Pembayaran Masuk</h3>
+            <span class="subtext">Pelunasan Piutang Customer</span>
+          </div>
+          <button class="sheet-close" @click="showPaymentModal = false"><Icon name="x" size="18" /></button>
+        </div>
+
+        <div class="sheet-body">
+          <div class="form-group mb-12">
+            <label class="form-label font-bold">Pelanggan / Toko *</label>
+            <select v-model="paymentEditForm.customer_id" class="form-select">
+              <option v-for="c in customers" :key="c.id" :value="c.id">
+                {{ c.name }} (Saldo Bon: Rp {{ fmt(c.balance || 0) }})
+              </option>
+            </select>
+          </div>
+
+          <div class="form-group mb-12">
+            <label class="form-label font-bold">Tanggal Pembayaran</label>
+            <input v-model="paymentEditForm.payment_date" type="date" class="form-input" />
+          </div>
+
+          <div class="payment-info-box">
+            <div class="p-row">
+              <span class="p-lbl">Dicatat Oleh:</span>
+              <span class="p-val font-bold">{{ selectedPayment.created_by || '-' }}</span>
+            </div>
+            <div class="p-row">
+              <span class="p-lbl">ID Transaksi:</span>
+              <span class="p-val font-mono">{{ selectedPayment.id }}</span>
+            </div>
+          </div>
+
+          <div class="form-group mb-12">
+            <label class="form-label font-bold">Nominal Pembayaran (Rp) *</label>
+            <input 
+              type="text" 
+              inputmode="numeric" 
+              :value="paymentEditForm.amount ? fmt(paymentEditForm.amount) : ''" 
+              @input="onPaymentAmountInput($event)" 
+              class="form-input font-bold" 
+              placeholder="0" 
+            />
+          </div>
+
+          <div class="form-group mb-12">
+            <label class="form-label font-bold">Metode Pembayaran</label>
+            <select v-model="paymentEditForm.method" class="form-select">
+              <option value="Tunai">Tunai (Cash)</option>
+              <option value="Transfer">Transfer Bank</option>
+            </select>
+          </div>
+
+          <div class="form-group mb-12">
+            <label class="form-label">Catatan Pembayaran</label>
+            <input v-model="paymentEditForm.note" type="text" placeholder="Catatan opsional..." class="form-input" />
+          </div>
+        </div>
+
+        <div class="sheet-footer payment-footer-actions">
+          <button 
+            v-if="canDeletePayment" 
+            type="button" 
+            class="btn-danger" 
+            :disabled="paymentActionLoading" 
+            @click="deletePaymentTx"
+          >
+            <Icon name="trash" size="16" /> Hapus
+          </button>
+          <div class="flex-spacer"></div>
+          <button type="button" class="btn-secondary" @click="showPaymentModal = false">
+            <Icon name="x" size="16" /> Batal
+          </button>
+          <button 
+            type="button" 
+            class="btn-primary" 
+            :disabled="paymentActionLoading || !paymentEditForm.amount" 
+            @click="submitUpdatePayment"
+          >
+            <Icon name="check" size="16" /> {{ paymentActionLoading ? 'Menyimpan...' : 'Simpan Perubahan' }}
+          </button>
         </div>
       </div>
     </div>
@@ -385,6 +599,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
@@ -392,15 +607,97 @@ import Icon from '../components/Icon.vue';
 import InvoiceView from '../components/InvoiceView.vue';
 import { formatNumber } from '../utils/format.js';
 
+const route = useRoute();
 const authStore = useAuthStore();
 const appStore = useAppStore();
 
-const tab = ref('pos');
+const tab = ref(route.query.tab === 'history' ? 'history' : 'pos');
 const customers = ref([]);
 const stock = ref([]);
 const invoices = ref([]);
 const payments = ref([]);
 const cart = ref([]);
+const drafts = ref([]);
+
+// State Mode Edit Transaksi di Kasir
+const editingInvoiceId = ref(null);
+const editingInvoiceNo = ref('');
+const editingInvoiceOriginal = ref(null);
+
+// Muat draf tersimpan dari localStorage
+function loadLocalDrafts() {
+  try {
+    const raw = localStorage.getItem('rh_pos_drafts');
+    drafts.value = raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    drafts.value = [];
+  }
+}
+
+function saveLocalDrafts() {
+  try {
+    localStorage.setItem('rh_pos_drafts', JSON.stringify(drafts.value));
+  } catch (e) {}
+}
+
+function saveCurrentCartAsDraft() {
+  if (cart.value.length === 0) {
+    return appStore.showToast('Keranjang masih kosong', 'warning');
+  }
+
+  const cust = customers.value.find(c => c.id === selectedCustomerId.value);
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+  const draftItem = {
+    id: crypto.randomUUID(),
+    title: cust ? `Draf ${cust.name}` : `Draf Transaksi (${cart.value.length} item)`,
+    customer_id: selectedCustomerId.value || '',
+    customer_name: cust ? cust.name : 'Umum',
+    pay_method: payMethod.value,
+    paid_amount: paidAmount.value,
+    note: txNote.value,
+    total: cartNetSubtotal.value,
+    saved_at: `${dateStr} ${timeStr}`,
+    cart: JSON.parse(JSON.stringify(cart.value))
+  };
+
+  drafts.value.unshift(draftItem);
+  saveLocalDrafts();
+
+  // Bersihkan keranjang kasir
+  cart.value = [];
+  selectedCustomerId.value = '';
+  txNote.value = '';
+  paidAmount.value = 0;
+
+  appStore.showToast('Draf pesanan berhasil disimpan (Hold)', 'success');
+}
+
+function loadDraftToCart(d) {
+  if (cart.value.length > 0) {
+    if (!confirm('Keranjang kasir saat ini tidak kosong. Ganti dengan isi draf ini?')) return;
+  }
+
+  cart.value = JSON.parse(JSON.stringify(d.cart || []));
+  selectedCustomerId.value = d.customer_id || '';
+  payMethod.value = d.pay_method || 'Tunai';
+  paidAmount.value = d.paid_amount || 0;
+  txNote.value = d.note || '';
+
+  // Hapus draf yang sudah diambil
+  deleteDraft(d.id, false);
+
+  tab.value = 'pos';
+  appStore.showToast('Draf dibuka ke kasir penjualan!', 'success');
+}
+
+function deleteDraft(id, notify = true) {
+  drafts.value = drafts.value.filter(d => d.id !== id);
+  saveLocalDrafts();
+  if (notify) appStore.showToast('Draf dihapus', 'info');
+}
 
 const selectedCustomerId = ref('');
 const showCustomerDropdown = ref(false);
@@ -578,8 +875,19 @@ function addToCart(s) {
   const effectivePrice = getProductPrice(s);
   const isCustom = hasCustomPrice(s.product_id);
   const ex = cart.value.find(i => i.product_id === s.product_id);
+
+  // Jika sedang dalam mode edit transaksi, perhitungkan stok yang sudah dialokasikan di invoice asal
+  let extraAllocated = 0;
+  if (editingInvoiceOriginal.value?.items) {
+    const origIt = editingInvoiceOriginal.value.items.find(it => it.product_id === s.product_id);
+    if (origIt) {
+      extraAllocated = parseInt(origIt.qty, 10) || 0;
+    }
+  }
+  const effectiveMaxStock = Math.max(1, (parseInt(s.stock, 10) || 0) + extraAllocated);
+
   if (ex) {
-    if (ex.qty < s.stock) ex.qty++;
+    if (ex.qty < ex.maxStock) ex.qty++;
     else appStore.showToast('Jumlah mencapai batas stok Anda', 'warning');
   } else {
     cart.value.push({
@@ -591,11 +899,18 @@ function addToCart(s) {
       price: effectivePrice,
       isCustomPrice: isCustom,
       qty: 1,
-      maxStock: s.stock,
+      maxStock: effectiveMaxStock,
       discount: 0,
       showDisc: false
     });
   }
+  if (payMethod.value !== 'Tempo') {
+    paidAmount.value = totalDue.value;
+  }
+}
+
+function removeCartItem(idx) {
+  cart.value.splice(idx, 1);
   if (payMethod.value !== 'Tempo') {
     paidAmount.value = totalDue.value;
   }
@@ -693,39 +1008,137 @@ async function loadInvoices() {
   }
 }
 
+function cancelEditInvoiceMode() {
+  editingInvoiceId.value = null;
+  editingInvoiceNo.value = '';
+  editingInvoiceOriginal.value = null;
+  cart.value = [];
+  selectedCustomerId.value = '';
+  txNote.value = '';
+  paidAmount.value = 0;
+  payMethod.value = 'Tunai';
+  appStore.showToast('Mode edit transaksi dibatalkan. Kembali ke transaksi baru.', 'info');
+}
+
+async function loadInvoiceToCart(inv) {
+  // Ambil detail lengkap jika belum ada items
+  let fullInv = inv;
+  if (!fullInv.items || fullInv.items.length === 0) {
+    try {
+      const res = await apiFetch(`/api/invoices/${inv.id}`);
+      fullInv = res.data;
+    } catch (e) {
+      console.warn('Gagal memuat detail invoice:', e);
+    }
+  }
+
+  // Set mode edit
+  editingInvoiceId.value = fullInv.id;
+  editingInvoiceNo.value = fullInv.invoice_no;
+  editingInvoiceOriginal.value = JSON.parse(JSON.stringify(fullInv));
+
+  // Set pelanggan & harga khusus
+  selectedCustomerId.value = fullInv.customer_id;
+  await loadCustomerPrices(fullInv.customer_id);
+
+  // Masukkan item-item invoice ke keranjang kasir
+  cart.value = (fullInv.items || []).map(it => {
+    const s = stock.value.find(st => st.product_id === it.product_id);
+    const curStock = s ? (parseInt(s.stock, 10) || 0) : 0;
+    const invQty = parseInt(it.qty, 10) || 1;
+    const isCustom = hasCustomPrice(it.product_id);
+    const defPrice = s ? parseFloat(s.price || 0) : parseFloat(it.price || 0);
+
+    return {
+      product_id: it.product_id,
+      product_name: it.name || it.product_name,
+      emoji: s?.emoji || '📦',
+      image: s?.image || '',
+      defaultPrice: defPrice,
+      price: parseFloat(it.price || defPrice),
+      isCustomPrice: isCustom || !!it.isCustomPrice,
+      qty: invQty,
+      maxStock: curStock + invQty, // stok tersedia + stok yang sedang dipegang invoice ini
+      discount: parseFloat(it.discount || 0),
+      showDisc: false
+    };
+  });
+
+  payMethod.value = fullInv.pay_method || 'Tunai';
+  paidAmount.value = parseFloat(fullInv.paid_amount || 0);
+  txNote.value = fullInv.note || '';
+
+  // Tutup struk preview jika terbuka dan alihkan ke tab Kasir Penjualan
+  activeInvoice.value = null;
+  tab.value = 'pos';
+  appStore.showToast(`Mode edit transaksi #${fullInv.invoice_no} aktif. Anda dapat menambah atau mengurangi barang langsung di kasir.`, 'info');
+}
+
+function openEditInvoiceModal(inv) {
+  loadInvoiceToCart(inv);
+}
+
 async function submitTransaction() {
   if (!selectedCustomerId.value) return appStore.showToast('Pilih pelanggan terlebih dahulu', 'warning');
   if (cart.value.length === 0) return appStore.showToast('Keranjang masih kosong', 'warning');
 
   submitting.value = true;
+  const isEditing = !!editingInvoiceId.value;
   const clientKey = crypto.randomUUID();
-  try {
-    const res = await apiFetch('/api/invoices', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': clientKey },
-      body: JSON.stringify({
-        customer_id: selectedCustomerId.value,
-        pay_method: payMethod.value,
-        paid_amount: payMethod.value === 'Tempo' ? 0 : Math.min(Number(paidAmount.value) || 0, totalDue.value),
-        note: (txNote.value ? txNote.value + ' ' : '') + (paidAmount.value > totalDue.value ? `(Diterima Rp ${fmt(paidAmount.value)}, Kembalian Rp ${fmt(paidAmount.value - totalDue.value)})` : '').trim(),
-        client_key: clientKey,
-        items: cart.value.map(it => ({
-          product_id: it.product_id,
-          qty: Number(it.qty) || 1,
-          price: Number(it.price) || 0,
-          discount: Number(it.discount) || 0
-        }))
-      })
-    });
 
-    appStore.showToast('Transaksi berhasil disimpan!', 'success');
-    activeInvoice.value = res.data;
+  try {
+    const payload = {
+      customer_id: selectedCustomerId.value,
+      pay_method: payMethod.value,
+      paid_amount: payMethod.value === 'Tempo' ? 0 : Math.min(Number(paidAmount.value) || 0, totalDue.value),
+      note: (txNote.value ? txNote.value + ' ' : '') + (paidAmount.value > totalDue.value ? `(Diterima Rp ${fmt(paidAmount.value)}, Kembalian Rp ${fmt(paidAmount.value - totalDue.value)})` : '').trim(),
+      items: cart.value.map(it => ({
+        product_id: it.product_id,
+        name: it.product_name,
+        qty: Number(it.qty) || 1,
+        price: Number(it.price) || 0,
+        discount: Number(it.discount) || 0
+      }))
+    };
+
+    let res;
+    if (isEditing) {
+      res = await apiFetch(`/api/invoices/${editingInvoiceId.value}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      appStore.showToast(`Transaksi #${editingInvoiceNo.value} berhasil diperbarui!`, 'success');
+    } else {
+      payload.client_key = clientKey;
+      res = await apiFetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': clientKey },
+        body: JSON.stringify(payload)
+      });
+      appStore.showToast('Transaksi berhasil disimpan!', 'success');
+    }
+
+    const savedInvoice = res.data;
+
+    // Reset keranjang & mode edit
+    editingInvoiceId.value = null;
+    editingInvoiceNo.value = '';
+    editingInvoiceOriginal.value = null;
     cart.value = [];
     selectedCustomerId.value = '';
+    txNote.value = '';
+    paidAmount.value = 0;
+    payMethod.value = 'Tunai';
+
     await loadData();
     await loadInvoices();
+
+    // Tampilkan struk invoice yang telah disimpan / diedit
+    if (savedInvoice) {
+      activeInvoice.value = savedInvoice;
+    }
   } catch (e) {
-    appStore.showToast(`Transaksi gagal: ${e.message}`, 'error');
+    appStore.showToast(`${isEditing ? 'Gagal mengubah transaksi' : 'Transaksi gagal'}: ${e.message}`, 'error');
   } finally {
     submitting.value = false;
   }
@@ -740,10 +1153,124 @@ async function viewInvoice(inv) {
   }
 }
 
-onMounted(() => {
-  loadData();
-  loadInvoices();
+// ====================================================
+// FITUR EDIT & HAPUS PELUNASAN PIUTANG
+// ====================================================
+const showPaymentModal = ref(false);
+const selectedPayment = ref(null);
+const paymentActionLoading = ref(false);
+const paymentEditForm = ref({
+  customer_id: '',
+  payment_date: '',
+  amount: 0,
+  method: 'Tunai',
+  note: ''
+});
+
+const canDeletePayment = computed(() => {
+  return ['admin', 'manajer'].includes(authStore.user?.role);
+});
+
+function onTransactionCardClick(tx) {
+  if (tx.type === 'Invoice') {
+    viewInvoice(tx);
+  } else if (tx.type === 'Pelunasan') {
+    openEditPaymentModal(tx);
+  }
+}
+
+function openEditPaymentModal(payment) {
+  selectedPayment.value = payment;
+  let rawDate = payment.date || payment.payment_date || '';
+  if (rawDate.includes(' ')) rawDate = rawDate.split(' ')[0];
+  if (!rawDate) rawDate = new Date().toISOString().split('T')[0];
+
+  paymentEditForm.value = {
+    customer_id: payment.customer_id || '',
+    payment_date: rawDate,
+    amount: parseFloat(payment.amount || 0),
+    method: payment.method || 'Tunai',
+    note: payment.note || ''
+  };
+  showPaymentModal.value = true;
+}
+
+function onPaymentAmountInput(event) {
+  const raw = event.target.value.replace(/\D/g, '');
+  paymentEditForm.value.amount = raw ? parseInt(raw, 10) : 0;
+  event.target.value = paymentEditForm.value.amount ? fmt(paymentEditForm.value.amount) : '';
+}
+
+async function submitUpdatePayment() {
+  if (!selectedPayment.value) return;
+  if (!paymentEditForm.value.amount || paymentEditForm.value.amount <= 0) {
+    return appStore.showToast('Nominal pembayaran harus lebih dari 0', 'warning');
+  }
+
+  paymentActionLoading.value = true;
+  try {
+    await apiFetch(`/api/receivables/${selectedPayment.value.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        customer_id: paymentEditForm.value.customer_id,
+        payment_date: paymentEditForm.value.payment_date,
+        amount: paymentEditForm.value.amount,
+        method: paymentEditForm.value.method,
+        note: paymentEditForm.value.note
+      })
+    });
+
+    appStore.showToast('Pembayaran berhasil diperbarui!', 'success');
+    showPaymentModal.value = false;
+    await loadData();
+    await loadInvoices();
+  } catch (e) {
+    appStore.showToast(`Gagal memperbarui pembayaran: ${e.message}`, 'error');
+  } finally {
+    paymentActionLoading.value = false;
+  }
+}
+
+async function deletePaymentTx() {
+  if (!selectedPayment.value) return;
+  if (!confirm(`Apakah Anda yakin ingin MENGHAPUS pembayaran Rp ${fmt(selectedPayment.value.amount)} untuk ${selectedPayment.value.customer || selectedPayment.value.customer_name}? Saldo piutang pelanggan akan dikembalikan.`)) {
+    return;
+  }
+
+  paymentActionLoading.value = true;
+  try {
+    await apiFetch(`/api/receivables/${selectedPayment.value.id}`, {
+      method: 'DELETE'
+    });
+
+    appStore.showToast('Pembayaran berhasil dihapus!', 'success');
+    showPaymentModal.value = false;
+    await loadData();
+    await loadInvoices();
+  } catch (e) {
+    appStore.showToast(`Gagal menghapus pembayaran: ${e.message}`, 'error');
+  } finally {
+    paymentActionLoading.value = false;
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([loadData(), loadInvoices()]);
+  loadLocalDrafts();
   document.addEventListener('click', handleClickOutside);
+
+  // Jika dipanggil dengan query param edit_invoice_id (misal dari riwayat penjualan)
+  if (route.query.edit_invoice_id) {
+    const invId = route.query.edit_invoice_id;
+    try {
+      const res = await apiFetch(`/api/invoices/${invId}`);
+      if (res.data) {
+        await loadInvoiceToCart(res.data);
+      }
+    } catch (err) {
+      console.warn('Gagal memuat invoice untuk diedit:', err);
+    }
+  }
 });
 
 onUnmounted(() => {
@@ -1628,6 +2155,48 @@ onUnmounted(() => {
   margin-top: 4px;
   font-weight: 600;
 }
+.inv-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color, #e2e8f0);
+}
+.btn-card-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--primary, #0072ff);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-card-edit:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+.btn-card-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-card-view:hover {
+  background: var(--border-color);
+}
 
 /* Modal */
 .sheet-overlay {
@@ -1658,5 +2227,261 @@ onUnmounted(() => {
   background: none;
   border: none;
   cursor: pointer;
+}
+
+/* Active Edit Transaction Banner & In-POS Edit Styles */
+.active-edit-banner {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(217, 119, 6, 0.08));
+  border: 1.5px solid #f59e0b;
+  border-radius: var(--radius-card, 12px);
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  animation: fadeIn 0.2s ease;
+}
+@media (max-width: 640px) {
+  .active-edit-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+.edit-banner-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.edit-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #b45309;
+  font-size: 15px;
+}
+[data-theme="dark"] .edit-banner-title {
+  color: #fbbf24;
+}
+.edit-banner-desc {
+  font-size: 12.5px;
+  color: var(--text-muted, #64748b);
+}
+.btn-cancel-edit-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card);
+  color: #dc2626;
+  border: 1.5px solid #ef4444;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.btn-cancel-edit-mode:hover {
+  background: #fef2f2;
+}
+.btn-update-checkout {
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.35) !important;
+}
+.btn-remove-cart-item {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.btn-remove-cart-item:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+.sheet-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Drafts Styles */
+.pos-checkout-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.btn-save-draft {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-main, #334155);
+  border: 1.5px solid var(--border-color, #cbd5e1);
+  border-radius: var(--radius-card, 10px);
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.btn-save-draft:hover:not(:disabled) {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+.btn-save-draft:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pos-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.draft-card {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 4px solid #f59e0b;
+}
+.draft-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.draft-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.draft-items-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.draft-item-tag {
+  background: var(--bg-hover, #f1f5f9);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text-main);
+}
+.draft-item-more {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  align-self: center;
+}
+.draft-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px dashed var(--border-color, #e2e8f0);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+.draft-total {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+.draft-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.btn-use-draft {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #0072ff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-del-draft {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: #ef4444;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.btn-del-draft:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* Edit Payment Modal Styles */
+.edit-payment-sheet {
+  max-width: 480px;
+}
+.payment-info-box {
+  background: var(--bg-hover, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.payment-info-box .p-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.payment-info-box .p-lbl {
+  color: var(--text-muted, #64748b);
+}
+.payment-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.flex-spacer {
+  flex: 1;
+}
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

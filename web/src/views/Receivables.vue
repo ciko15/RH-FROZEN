@@ -112,28 +112,31 @@
               <strong>Rp {{ formatNumber(selectedDebtor.balance) }}</strong>
             </div>
             <div class="info-row">
-              <span>Sisa Setelah Bayar:</span>
-              <strong :class="payRemaining <= 0 ? 'text-success' : 'text-danger'">
-                Rp {{ formatNumber(payRemaining) }}
+              <span>{{ payRemaining < 0 ? 'Kelebihan Titipan (Kas):' : 'Sisa Piutang Setelah Bayar:' }}</span>
+              <strong :class="payRemaining < 0 ? 'text-primary' : (payRemaining === 0 ? 'text-success' : 'text-danger')">
+                {{ payRemaining < 0 ? '+ Rp ' + formatNumber(Math.abs(payRemaining)) + ' (Sisa Titipan)' : (payRemaining === 0 ? 'Rp 0 (LUNAS)' : 'Rp ' + formatNumber(payRemaining)) }}
               </strong>
             </div>
           </div>
 
           <div class="form-group">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <label>Jumlah Bayar (Rp) *</label>
-              <span style="font-size:11px; color:var(--text-muted);">Bisa bayar cicil atau penuh</span>
+              <label>Jumlah Nominal Pembayaran (Rp) *</label>
+              <span style="font-size:11px; color:var(--text-muted);">Ketik nominal pembayaran titipan</span>
             </div>
             <input
               v-model="formattedPayAmount"
               type="text"
               inputmode="numeric"
               placeholder="0"
+              style="font-size: 16px; font-weight: 700;"
             />
-            <div class="quick-pay-presets">
-              <button type="button" class="btn-preset" @click="payAmount = selectedDebtor.balance">Bayar Lunas (100%)</button>
-              <button type="button" class="btn-preset" @click="payAmount = Math.round(selectedDebtor.balance / 2)">Bayar 50%</button>
-            </div>
+            <small v-if="payRemaining < 0" class="text-primary font-bold" style="font-size: 11.5px; margin-top: 4px; display: block;">
+              💡 Pembayaran lebih besar dari hutang. Saldo lebih Rp {{ formatNumber(Math.abs(payRemaining)) }} akan tercatat sebagai sisa titipan di kas.
+            </small>
+            <small v-else-if="payAmount > 0 && payRemaining > 0" class="text-warning font-bold" style="font-size: 11.5px; margin-top: 4px; display: block;">
+              💡 Pembayaran sebagian / cicil. Sisa hutang berjalan menjadi Rp {{ formatNumber(payRemaining) }}.
+            </small>
           </div>
 
           <div class="form-group">
@@ -146,13 +149,13 @@
 
           <div class="form-group">
             <label>Keterangan (Opsional)</label>
-            <input v-model="payNote" type="text" placeholder="Contoh: Titip lewat sales" />
+            <input v-model="payNote" type="text" placeholder="Contoh: Titipan pelunasan" />
           </div>
 
           <button
             class="btn-submit"
             @click="submitReceivePayment"
-            :disabled="payLoading || payAmount <= 0 || payAmount > selectedDebtor.balance || !isOnline"
+            :disabled="payLoading || payAmount <= 0 || !isOnline"
           >
             {{ !isOnline ? 'Pelunasan Hanya Dapat Dilakukan Saat Online' : (payLoading ? 'Menyimpan...' : '✓ Simpan & Cetak Tanda Terima') }}
           </button>
@@ -223,7 +226,7 @@ const formattedPayAmount = computed({
 
 const payRemaining = computed(() => {
   if (!selectedDebtor.value) return 0;
-  return Math.max(selectedDebtor.value.balance - (payAmount.value || 0), 0);
+  return selectedDebtor.value.balance - (payAmount.value || 0);
 });
 
 async function fetchReceivables() {
@@ -241,14 +244,14 @@ async function fetchReceivables() {
 
 function openPayModal(d) {
   selectedDebtor.value = d;
-  payAmount.value = d.balance;
+  payAmount.value = d.balance > 0 ? d.balance : 0;
   payMethod.value = 'Tunai';
   payNote.value = 'Pelunasan piutang';
 }
 
 async function submitReceivePayment() {
-  if (payAmount.value <= 0 || payAmount.value > selectedDebtor.value.balance) {
-    appStore.showToast('Jumlah pembayaran tidak valid', 'warning');
+  if (payAmount.value <= 0) {
+    appStore.showToast('Jumlah pembayaran harus lebih dari 0', 'warning');
     return;
   }
 

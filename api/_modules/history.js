@@ -73,11 +73,14 @@ export default async function handler(req, res) {
         id: p.id,
         type: 'Pelunasan',
         title: `Pelunasan Piutang`,
+        customer_id: p.customer_id || '',
         customer: customers.find(c => c.id === p.customer_id)?.name || p.note || 'Pelanggan',
         date: `${p.payment_date} ${p.payment_time || ''}`.trim(),
         amount: parseFloat(p.amount || 0),
         status: 'Masuk',
-        method: p.method || ''
+        method: p.method || '',
+        note: p.note || '',
+        created_by: p.created_by || ''
       });
     });
 

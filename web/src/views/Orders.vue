@@ -167,12 +167,98 @@
               <Icon name="truck" size="16" />
               <span>Konfirmasi Pengiriman</span>
             </button>
+            <button v-if="canEditOrder" class="btn-action btn-edit-order" :disabled="actionLoading" @click="openEditOrderModal">
+              <Icon name="edit" size="16" />
+              <span>Edit Pesanan</span>
+            </button>
+            <button v-if="canDeleteOrder" class="btn-action btn-delete-order" :disabled="actionLoading" @click="handleDeleteOrder">
+              <Icon name="trash" size="16" />
+              <span>Hapus Pesanan</span>
+            </button>
             <button v-if="canCancel" class="btn-action btn-cancel" :disabled="actionLoading" @click="handleCancel">
               <Icon name="x" size="16" />
               <span>Batalkan</span>
             </button>
           </div>
           <p v-if="canShip" class="hint">Klik konfirmasi untuk memeriksa & mengubah jumlah barang yang dikirim.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL EDIT PESANAN SALES (STATUS PROSES) -->
+    <div v-if="showEditOrderModal" class="sheet-overlay" @click.self="showEditOrderModal = false">
+      <div class="sheet-content edit-order-sheet">
+        <div class="sheet-header">
+          <div>
+            <h3>Edit Permintaan #{{ selected?.order_no }}</h3>
+            <span class="subtext">Ubah kuantitas atau tambah/kurang barang yang diminta</span>
+          </div>
+          <button class="sheet-close" @click="showEditOrderModal = false"><Icon name="x" size="18" /></button>
+        </div>
+
+        <div class="sheet-body">
+          <!-- Tambah Barang ke Permintaan -->
+          <div class="form-group mb-12">
+            <label class="form-label font-bold">Tambah Produk</label>
+            <div class="add-order-item-row">
+              <select v-model="selectedNewProductId" class="form-select flex-1">
+                <option value="">-- Pilih Barang untuk Ditambahkan --</option>
+                <option v-for="p in allProductsList" :key="p.id" :value="p.id">
+                  {{ p.name }} (Stok Gudang: {{ formatNumber(p.stock) }} pcs)
+                </option>
+              </select>
+              <button type="button" class="btn-add-item" :disabled="!selectedNewProductId" @click="addItemToEditingOrder">
+                <Icon name="plus" size="14" /> Tambah
+              </button>
+            </div>
+          </div>
+
+          <!-- Daftar Barang Permintaan -->
+          <div class="form-group mb-14">
+            <label class="form-label font-bold">Daftar Barang Diminta ({{ editOrderItems.length }} item)</label>
+            <div v-if="editOrderItems.length === 0" class="empty-item-alert">
+              ⚠️ Minimal 1 barang harus diminta dalam pesanan.
+            </div>
+            <div v-else class="edit-order-items-scroll">
+              <div v-for="(it, idx) in editOrderItems" :key="it.product_id" class="edit-order-item-card">
+                <div class="edit-order-item-info">
+                  <div class="edit-order-item-name font-bold">{{ it.product_name || it.name }}</div>
+                  <small class="text-muted">Stok admin: {{ formatNumber(it.admin_stock || 0) }} pcs</small>
+                </div>
+
+                <div class="edit-order-item-actions">
+                  <div class="order-stepper">
+                    <button type="button" @click="it.qty = Math.max(1, it.qty - 1)" :disabled="it.qty <= 1">−</button>
+                    <input type="number" min="1" v-model.number="it.qty" @input="it.qty = Math.max(1, parseInt(it.qty) || 1)" />
+                    <button type="button" @click="it.qty++">+</button>
+                  </div>
+                  <button type="button" class="btn-del-item" @click="editOrderItems.splice(idx, 1)" title="Hapus Barang">
+                    <Icon name="trash" size="15" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Catatan -->
+          <div class="form-group mb-12">
+            <label class="form-label">Catatan Pesanan</label>
+            <input v-model="editOrderNote" type="text" placeholder="Catatan permintaan..." class="form-input" />
+          </div>
+
+          <div class="total-edit-order-bar">
+            <span>Total Barang Diminta:</span>
+            <strong>{{ formatNumber(totalEditOrderQty) }} pcs</strong>
+          </div>
+        </div>
+
+        <div class="sheet-footer">
+          <button type="button" class="btn-secondary" @click="showEditOrderModal = false">
+            <Icon name="x" size="16" /> Batal
+          </button>
+          <button type="button" class="btn-primary" :disabled="saveOrderLoading || editOrderItems.length === 0" @click="submitSaveEditOrder">
+            <Icon name="check" size="16" /> {{ saveOrderLoading ? 'Menyimpan...' : 'Simpan Perubahan' }}
+          </button>
         </div>
       </div>
     </div>
@@ -358,6 +444,109 @@ const filteredOrders = computed(() => {
 
 const canShip = computed(() => isAdmin.value && selected.value?.status === 'Proses');
 const canCancel = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
+const canEditOrder = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
+const canDeleteOrder = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
+
+// State & Fungsi Edit Pesanan
+const showEditOrderModal = ref(false);
+const saveOrderLoading = ref(false);
+const allProductsList = ref([]);
+const editOrderItems = ref([]);
+const editOrderNote = ref('');
+const selectedNewProductId = ref('');
+
+const totalEditOrderQty = computed(() => {
+  return editOrderItems.value.reduce((s, it) => s + (parseInt(it.qty, 10) || 0), 0);
+});
+
+async function openEditOrderModal() {
+  if (!selected.value) return;
+  editOrderNote.value = selected.value.note || '';
+  editOrderItems.value = (selected.value.items || []).map(it => ({
+    product_id: it.product_id,
+    name: it.product_name || it.name,
+    qty: it.qty || 1,
+    admin_stock: it.admin_stock || 0
+  }));
+  selectedNewProductId.value = '';
+
+  // Muat daftar seluruh produk aktif gudang jika belum ada
+  if (allProductsList.value.length === 0) {
+    try {
+      const res = await apiFetch('/api/products?active=true');
+      allProductsList.value = res.data || [];
+    } catch (e) {}
+  }
+
+  showEditOrderModal.value = true;
+}
+
+function addItemToEditingOrder() {
+  if (!selectedNewProductId.value) return;
+  const prod = allProductsList.value.find(p => p.id === selectedNewProductId.value);
+  if (!prod) return;
+
+  const existing = editOrderItems.value.find(it => it.product_id === prod.id);
+  if (existing) {
+    existing.qty++;
+  } else {
+    editOrderItems.value.push({
+      product_id: prod.id,
+      name: prod.name,
+      qty: 1,
+      admin_stock: parseInt(prod.stock, 10) || 0
+    });
+  }
+  selectedNewProductId.value = '';
+}
+
+async function submitSaveEditOrder() {
+  if (editOrderItems.value.length === 0) {
+    return appStore.showToast('Minimal 1 barang harus diminta', 'warning');
+  }
+
+  saveOrderLoading.value = true;
+  try {
+    await apiFetch(`/api/orders/${selected.value.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        note: editOrderNote.value,
+        items: editOrderItems.value.map(it => ({
+          product_id: it.product_id,
+          qty: parseInt(it.qty, 10) || 1
+        }))
+      })
+    });
+
+    appStore.showToast('Pesanan berhasil diperbarui!', 'success');
+    showEditOrderModal.value = false;
+    await load();
+  } catch (err) {
+    appStore.showToast('Gagal mengubah pesanan: ' + err.message, 'error');
+  } finally {
+    saveOrderLoading.value = false;
+  }
+}
+
+async function handleDeleteOrder() {
+  if (!selected.value) return;
+  if (!confirm(`Hapus permanen permintaan stok #${selected.value.order_no}?`)) return;
+
+  actionLoading.value = true;
+  try {
+    await apiFetch(`/api/orders/${selected.value.id}`, {
+      method: 'DELETE'
+    });
+
+    appStore.showToast('Pesanan berhasil dihapus!', 'success');
+    selected.value = null;
+    await load();
+  } catch (err) {
+    appStore.showToast('Gagal menghapus pesanan: ' + err.message, 'error');
+  } finally {
+    actionLoading.value = false;
+  }
+}
 
 function badgeClass(s) {
   return { Proses: 'badge-proses', Dikirim: 'badge-dikirim', Dibatalkan: 'badge-batal' }[s] || '';
@@ -1230,5 +1419,156 @@ onMounted(load);
 }
 .confirm-btn {
   flex: 1;
+}
+
+/* Edit Order Modal Styles */
+.btn-edit-order {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+.btn-delete-order {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+}
+.edit-order-sheet {
+  max-width: 580px;
+}
+.add-order-item-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.btn-add-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #0072ff;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-add-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.empty-item-alert {
+  background: #fef2f2;
+  color: #b91c1c;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.edit-order-items-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 250px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.edit-order-item-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  gap: 12px;
+}
+.edit-order-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.edit-order-item-name {
+  font-size: 13px;
+  color: #1e293b;
+}
+.edit-order-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.order-stepper {
+  display: flex;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  height: 32px;
+}
+.order-stepper button {
+  width: 28px;
+  height: 100%;
+  border: none;
+  background: #f1f5f9;
+  font-weight: 700;
+  cursor: pointer;
+}
+.order-stepper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.order-stepper input {
+  width: 44px;
+  border: none;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
+}
+.btn-del-item {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+.btn-del-item:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+.total-edit-order-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(0, 114, 255, 0.08);
+  border-radius: 8px;
+  font-size: 13px;
+  margin-top: 8px;
+}
+.sheet-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+}
+.btn-primary {
+  background: #0072ff;
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

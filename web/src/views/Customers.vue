@@ -66,7 +66,7 @@
             <button class="btn-price" @click="openPricesModal(c)" title="Atur harga khusus">
               <Icon name="tag" size="13" /> Harga
             </button>
-            <button class="btn-delete-cust" @click="confirmDeleteCustomer(c)" title="Hapus pelanggan">
+            <button v-if="canDeleteCustomer" class="btn-delete-cust" @click="confirmDeleteCustomer(c)" title="Hapus pelanggan">
               <Icon name="trash" size="13" /> Hapus
             </button>
           </div>
@@ -347,6 +347,7 @@ function parseInputNumber(val) {
 const authStore = useAuthStore();
 const appStore = useAppStore();
 const user = computed(() => authStore.user);
+const canDeleteCustomer = computed(() => ['admin', 'manajer'].includes(user.value?.role));
 
 const loading = ref(false);
 const customers = ref([]);
@@ -546,6 +547,9 @@ async function submitCreateCustomer() {
 }
 
 async function confirmDeleteCustomer(c) {
+  if (!canDeleteCustomer.value) {
+    return appStore.showToast('Akun sales tidak memiliki izin menghapus pelanggan', 'error');
+  }
   const confirmed = window.confirm(`Apakah Anda yakin ingin menghapus pelanggan "${c.name}"?`);
   if (!confirmed) return;
 

@@ -191,10 +191,10 @@ export default async function handler(req, res) {
     }
 
     // ==========================================
-    // DELETE: Hapus / Nonaktifkan Pelanggan
+    // DELETE: Hapus / Nonaktifkan Pelanggan (Admin & Manajer Only)
     // ==========================================
     if (req.method === 'DELETE') {
-      requireRole(authUser, ['admin', 'manajer', 'sales']);
+      requireRole(authUser, ['admin', 'manajer']);
       const id = req.query.id;
       if (!id) {
         throw new ApiError(400, 'ID_REQUIRED', 'ID pelanggan wajib disertakan');

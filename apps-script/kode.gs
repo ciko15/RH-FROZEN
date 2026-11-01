@@ -87,6 +87,14 @@ function doPost(e) {
         updateSheetRow(tabName, rowIndex, rowObject, headers);
         return responseJson({ ok: true, message: 'Baris ' + rowIndex + ' berhasil diperbarui di ' + tabName });
       }
+      case 'deleteRow': {
+        const { tabName, rowIndex } = payload;
+        const sheet = getSpreadsheet().getSheetByName(tabName);
+        if (sheet && rowIndex > 1) {
+          sheet.deleteRow(rowIndex);
+        }
+        return responseJson({ ok: true, message: 'Baris ' + rowIndex + ' berhasil dihapus dari ' + tabName });
+      }
       case 'createSalesTx':
         return responseJson(createSalesTx(payload));
       case 'approveReturn':
@@ -950,11 +958,9 @@ function receivePayment(payload) {
     if (payAmount <= 0) {
       return { ok: false, error: 'INVALID_AMOUNT', message: 'Jumlah pembayaran harus lebih dari 0' };
     }
-    if (payAmount > currentBalance) {
-      return { ok: false, error: 'OVERPAID', message: `Pembayaran (Rp ${payAmount.toLocaleString('id-ID')}) melebihi saldo piutang (Rp ${currentBalance.toLocaleString('id-ID')})` };
-    }
 
     const remaining = currentBalance - payAmount;
+    // Jika remaining < 0, customer memiliki titipan lebih (saldo piutang 0, tapi ada kelebihan titipan tercatat)
     customer.balance = remaining;
     const custHeaders = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
     updateSheetRow('Customers', customer._rowIndex, customer, custHeaders);
@@ -963,6 +969,10 @@ function receivePayment(payload) {
     const dateStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, APP_CONFIG.DATE_FORMAT);
     const timeStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'HH:mm:ss');
     const paymentId = Utilities.getUuid();
+
+    const depositNote = remaining < 0 
+      ? `${note || 'Pelunasan Piutang'} (Kelebihan titipan: Rp ${Math.abs(remaining).toLocaleString('id-ID')})`
+      : (note || 'Pelunasan Piutang');
 
     appendSheetRow('Payments', {
       id: paymentId,
@@ -973,7 +983,7 @@ function receivePayment(payload) {
       type: 'Piutang',
       amount: payAmount,
       method: method || 'Tunai',
-      note: note || 'Pelunasan Piutang',
+      note: depositNote,
       created_by: user_id
     }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
 

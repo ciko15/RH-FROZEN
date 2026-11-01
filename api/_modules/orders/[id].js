@@ -9,11 +9,16 @@ import { logAudit } from '../_lib/audit.js';
 const editOrderSchema = z.object({
   note: z.string().optional(),
   customer_name: z.string().optional(),
-  customer_phone: z.string().optional()
+  customer_phone: z.string().optional(),
+  items: z.array(z.object({
+    product_id: z.string().min(1),
+    qty: z.coerce.number().int().positive('Qty harus positif')
+  })).min(1, 'Minimal 1 barang').optional()
 });
 
 const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'];
 const CUST_HEADERS = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
+const ORDER_ITEM_HEADERS = ['id', 'order_id', 'product_id', 'qty', 'qty_shipped', 'price'];
 
 export default async function handler(req, res) {
   try {
@@ -97,13 +102,64 @@ export default async function handler(req, res) {
 
       const data = validateBody(editOrderSchema, req.body);
 
-      // 1. Update catatan order jika ada
+      // 1. Update items jika dikirim dan status masih Proses
+      if (data.items) {
+        if (order.status !== 'Proses') {
+          throw new ApiError(400, 'INVALID_STATUS', 'Hanya pesanan berstatus Proses yang dapat diubah rincian barangnya');
+        }
+
+        const { appendRow } = await import('../_lib/sheets.js');
+        const currentOrderItems = (tabs.OrderItems || []).filter(oi => oi.order_id === order.id);
+
+        for (let i = 0; i < Math.max(currentOrderItems.length, data.items.length); i++) {
+          if (i < currentOrderItems.length && i < data.items.length) {
+            // Update existing row
+            const oldRow = currentOrderItems[i];
+            const newItem = data.items[i];
+            const updated = {
+              ...oldRow,
+              product_id: newItem.product_id,
+              qty: newItem.qty,
+              qty_shipped: ''
+            };
+            if (oldRow._rowIndex) {
+              await updateRow('OrderItems', oldRow._rowIndex, updated, ORDER_ITEM_HEADERS);
+            }
+          } else if (i < currentOrderItems.length && i >= data.items.length) {
+            // Hapus item berlebih
+            const oldRow = currentOrderItems[i];
+            if (oldRow._rowIndex) {
+              await updateRow('OrderItems', oldRow._rowIndex, {
+                id: oldRow.id,
+                order_id: order.id,
+                product_id: oldRow.product_id,
+                qty: 0,
+                qty_shipped: 0,
+                price: 0
+              }, ORDER_ITEM_HEADERS);
+            }
+          } else if (i >= currentOrderItems.length && i < data.items.length) {
+            // Tambah row baru
+            const newItem = data.items[i];
+            await appendRow('OrderItems', {
+              id: crypto.randomUUID(),
+              order_id: order.id,
+              product_id: newItem.product_id,
+              qty: newItem.qty,
+              qty_shipped: '',
+              price: 0
+            }, ORDER_ITEM_HEADERS);
+          }
+        }
+      }
+
+      // 2. Update catatan order jika ada
       if (data.note !== undefined && order._rowIndex) {
         order.note = data.note;
         await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
       }
 
-      // 2. Update nomor tujuan / nama pelanggan di tab Customers jika diisi
+      // 3. Update nomor tujuan / nama pelanggan di tab Customers jika diisi
       const customers = tabs.Customers || [];
       const customer = customers.find(c => c.id === order.customer_id);
       if (customer && customer._rowIndex) {
@@ -125,16 +181,55 @@ export default async function handler(req, res) {
         }
       }
 
+      const { clearCache } = await import('../_lib/cache.js');
+      clearCache();
+
       await logAudit(authUser.id, 'UPDATE_ORDER', {
         order_id: order.id,
         order_no: order.order_no,
         customer_phone: data.customer_phone,
+        items_count: data.items ? data.items.length : undefined,
         note: data.note
       });
 
       return res.status(200).json({
         ok: true,
-        message: 'Data order dan nomor telepon tujuan berhasil diperbarui'
+        message: 'Pesanan permintaan stok berhasil diperbarui'
+      });
+    }
+
+    // ==========================================
+    // DELETE: Hapus Pesanan Permintaan (Admin / Sales)
+    // ==========================================
+    if (req.method === 'DELETE') {
+      requireRole(authUser, ['admin', 'manajer', 'sales']);
+
+      if (authUser.role === 'sales' && order.sales_id !== authUser.id) {
+        throw new ApiError(403, 'FORBIDDEN', 'Anda hanya dapat menghapus pesanan milik Anda sendiri');
+      }
+
+      if (order.status !== 'Proses') {
+        throw new ApiError(400, 'INVALID_STATUS', 'Hanya pesanan berstatus Proses yang dapat dihapus');
+      }
+
+      // Tandai order menjadi Dibatalkan / Dihapus
+      order.status = 'Dibatalkan';
+      order.note = (order.note ? order.note + ' | ' : '') + 'Dihapus oleh ' + authUser.username;
+      if (order._rowIndex) {
+        await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
+      }
+
+      const { clearCache } = await import('../_lib/cache.js');
+      clearCache();
+
+      await logAudit(authUser.id, 'DELETE_ORDER', {
+        order_id: order.id,
+        order_no: order.order_no
+      });
+
+      return res.status(200).json({
+        ok: true,
+        message: 'Pesanan permintaan stok berhasil dihapus'
       });
     }
 

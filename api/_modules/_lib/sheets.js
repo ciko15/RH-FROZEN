@@ -2175,4 +2175,50 @@ export async function updateRow(tabName, rowIndex, rowObject, headers) {
   }
 }
 
+/**
+ * Menghapus baris tertentu dari sheet
+ */
+export async function deleteRow(tabName, rowIndex, rowId = null) {
+  // 1. Update cache lokal
+  const cached = getCached(tabName);
+  if (Array.isArray(cached)) {
+    const updated = cached.filter(r => (rowId ? r.id !== rowId : r._rowIndex !== rowIndex));
+    setCached(tabName, updated, 60);
+  }
+
+  // 2. Sync ke Google Spreadsheet / Apps Script
+  try {
+    if (!SA_EMAIL || !SA_KEY) {
+      await callGas('deleteRow', { tabName, rowIndex, rowId });
+    } else {
+      const sheets = getSheetsClient();
+      // Dapatkan sheetId numerik dari tabName
+      const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+      const sheetObj = meta.data.sheets.find(s => s.properties.title === tabName);
+      if (sheetObj) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SPREADSHEET_ID,
+          requestBody: {
+            requests: [
+              {
+                deleteDimension: {
+                  range: {
+                    sheetId: sheetObj.properties.sheetId,
+                    dimension: 'ROWS',
+                    startIndex: rowIndex - 1, // 0-indexed
+                    endIndex: rowIndex
+                  }
+                }
+              }
+            ]
+          }
+        });
+      }
+    }
+  } catch (e) {
+    console.error(`[SYNC DELETE ERROR] Tab ${tabName} Row ${rowIndex}:`, e.message);
+    throw e;
+  }
+}
+
 export { SPREADSHEET_ID };

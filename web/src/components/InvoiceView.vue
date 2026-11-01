@@ -176,9 +176,9 @@
         <Icon name="camera" size="15" />
         <span>{{ imageLoading ? 'Proses...' : 'Foto' }}</span>
       </button>
-      <button class="btn-inv btn-pdf" @click="handleDownloadPdf" :disabled="pdfLoading" title="Download File Dokumen PDF">
-        <Icon name="file-text" size="15" />
-        <span>{{ pdfLoading ? '...' : 'PDF' }}</span>
+      <button class="btn-inv btn-edit" v-if="canEdit" @click="$emit('edit', invoice)" title="Edit Transaksi Ini (Item, Pelanggan, Pembayaran)">
+        <Icon name="edit" size="15" />
+        <span>Edit</span>
       </button>
       <button class="btn-inv btn-retur" v-if="!invoice.is_return" @click="handleGoToReturn" title="Retur Produk Transaksi Ini">
         <Icon name="rotate-ccw" size="15" />
@@ -193,6 +193,7 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import html2canvas from 'html2canvas';
 import { apiFetch } from '../api.js';
+import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import { formatNumber } from '../utils/format.js';
 
@@ -207,11 +208,23 @@ const props = defineProps({
   }
 });
 
+const emit = defineEmits(['edit']);
+
 const router = useRouter();
+const authStore = useAuthStore();
 const appStore = useAppStore();
 const receiptRef = ref(null);
 const pdfLoading = ref(false);
 const imageLoading = ref(false);
+
+const canEdit = computed(() => {
+  const role = authStore.user?.role;
+  if (!role || (role !== 'admin' && role !== 'manajer' && role !== 'sales')) return false;
+  if (role === 'sales' && props.invoice.sales_id && props.invoice.sales_id !== authStore.user?.id) return false;
+  // Jika transaksi memiliki retur yang sudah disetujui, cegah edit
+  if (props.invoice.has_return || (props.invoice.returns && props.invoice.returns.length > 0)) return false;
+  return true;
+});
 
 const isLunas = computed(() => {
   return parseFloat(props.invoice.remaining || 0) <= 0;
@@ -604,6 +617,7 @@ function handleWhatsApp() {
 .btn-wa { background: #16a34a; }
 .btn-photo { background: #0284c7; }
 .btn-pdf { background: #6366f1; }
+.btn-edit { background: #f59e0b; color: #fff; }
 .btn-retur { background: #dc2626; }
 
 @media (max-width: 480px) {
