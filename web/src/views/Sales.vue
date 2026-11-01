@@ -388,7 +388,7 @@
               <strong><Icon name="bookmark" size="14" /> {{ d.title || 'Draf Transaksi' }}</strong>
               <small class="text-muted">{{ d.saved_at }}</small>
             </div>
-            <span class="badge badge-proses">Draf ({{ d.items.length }} item)</span>
+            <span class="badge badge-proses">Draf ({{ (d.cart || d.items || []).length }} item)</span>
           </div>
 
           <div class="draft-cust font-bold">
@@ -396,11 +396,11 @@
           </div>
 
           <div class="draft-items-preview">
-            <span v-for="it in d.items.slice(0, 3)" :key="it.product_id" class="draft-item-tag">
+            <span v-for="it in (d.cart || d.items || []).slice(0, 3)" :key="it.product_id" class="draft-item-tag">
               {{ it.product_name }} ({{ it.qty }}x)
             </span>
-            <span v-if="d.items.length > 3" class="draft-item-more">
-              +{{ d.items.length - 3 }} lainnya
+            <span v-if="(d.cart || d.items || []).length > 3" class="draft-item-more">
+              +{{ (d.cart || d.items || []).length - 3 }} lainnya
             </span>
           </div>
 
@@ -660,7 +660,8 @@ function saveCurrentCartAsDraft() {
     note: txNote.value,
     total: cartNetSubtotal.value,
     saved_at: `${dateStr} ${timeStr}`,
-    cart: JSON.parse(JSON.stringify(cart.value))
+    cart: JSON.parse(JSON.stringify(cart.value)),
+    items: JSON.parse(JSON.stringify(cart.value))
   };
 
   drafts.value.unshift(draftItem);
@@ -680,7 +681,7 @@ function loadDraftToCart(d) {
     if (!confirm('Keranjang kasir saat ini tidak kosong. Ganti dengan isi draf ini?')) return;
   }
 
-  cart.value = JSON.parse(JSON.stringify(d.cart || []));
+  cart.value = JSON.parse(JSON.stringify(d.cart || d.items || []));
   selectedCustomerId.value = d.customer_id || '';
   payMethod.value = d.pay_method || 'Tunai';
   paidAmount.value = d.paid_amount || 0;

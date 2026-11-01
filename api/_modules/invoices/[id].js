@@ -149,7 +149,7 @@ export default async function handler(req, res) {
         note: z.string().optional(),
         items: z.array(z.object({
           product_id: z.string().min(1),
-          qty: z.coerce.number().int().positive('Qty harus positif'),
+          qty: z.coerce.number().positive('Qty harus positif'),
           price: z.coerce.number().min(0).optional(),
           discount: z.coerce.number().min(0).optional().default(0)
         })).min(1, 'Minimal 1 barang harus dibeli').optional()
@@ -192,7 +192,7 @@ export default async function handler(req, res) {
         // Buat map qty baru: product_id -> newQty
         const newQtyMap = {};
         data.items.forEach(it => {
-          newQtyMap[it.product_id] = (newQtyMap[it.product_id] || 0) + parseInt(it.qty, 10);
+          newQtyMap[it.product_id] = (newQtyMap[it.product_id] || 0) + parseFloat(it.qty || 0);
         });
 
         // Cek kecukupan stok sales untuk selisih penambahan barang (deltaQty > 0)
@@ -203,7 +203,7 @@ export default async function handler(req, res) {
           const delta = newQ - oldQ; // jika positif: perlu stok tambahan dari sales
           if (delta > 0) {
             const ss = allSalesStock.find(s => s.sales_id === targetSalesId && s.product_id === pId);
-            const avail = parseInt(ss?.stock || 0, 10);
+            const avail = parseFloat(ss?.stock || 0);
             if (avail < delta) {
               const pName = allProducts.find(p => p.id === pId)?.name || pId;
               throw new ApiError(400, 'INSUFFICIENT_STOCK', `Stok ${pName} sales tidak mencukupi untuk penambahan (tersedia: ${avail}, dibutuhkan tambahan: ${delta})`);
@@ -219,7 +219,7 @@ export default async function handler(req, res) {
           if (delta !== 0) {
             const ssRow = allSalesStock.find(s => s.sales_id === targetSalesId && s.product_id === pId);
             if (ssRow && ssRow._rowIndex) {
-              const curStock = parseInt(ssRow.stock || 0, 10);
+              const curStock = parseFloat(ssRow.stock || 0);
               const updatedStock = Math.max(0, curStock - delta);
               ssRow.stock = updatedStock;
               ssRow.updated_at = nowIso;
@@ -251,7 +251,7 @@ export default async function handler(req, res) {
             else price = parseFloat(prod?.price || 0);
           }
           const discount = parseFloat(it.discount || 0);
-          const qty = parseInt(it.qty, 10);
+          const qty = parseFloat(it.qty || 0);
           const lineTotal = (price * qty) - discount;
 
           newSubtotal += lineTotal;

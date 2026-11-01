@@ -11,7 +11,7 @@ const createInvoiceSchema = z.object({
   customer_id: z.string().min(1, 'Pelanggan wajib dipilih'),
   items: z.array(z.object({
     product_id: z.string().min(1),
-    qty: z.coerce.number().int().positive('Qty harus positif'),
+    qty: z.coerce.number().positive('Qty harus positif'),
     price: z.coerce.number().min(0).optional(),
     discount: z.coerce.number().min(0).optional().default(0)
   })).min(1, 'Minimal 1 barang'),
