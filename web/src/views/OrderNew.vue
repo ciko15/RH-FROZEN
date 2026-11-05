@@ -26,8 +26,7 @@
           :class="{ selected: qtyOf(p.id) > 0 }"
           @click="inc(p)"
         >
-          <img v-if="p.image" :src="p.image" class="prod-img" alt="" loading="lazy" />
-          <span v-else class="prod-emoji">{{ p.emoji || '📦' }}</span>
+          <span class="prod-emoji">📦</span>
           <span class="prod-name">{{ p.name }}</span>
           <span class="prod-stock" :class="{ danger: p.stock <= 0 }">Stok admin: {{ formatNumber(p.stock) }}</span>
           <span v-if="qtyOf(p.id) > 0" class="prod-badge">{{ qtyOf(p.id) }}</span>

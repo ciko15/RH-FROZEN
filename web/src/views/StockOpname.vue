@@ -92,14 +92,7 @@
         >
           <div class="stock-left">
             <div class="prod-thumb">
-              <img
-                v-if="isValidImage(p.image)"
-                :src="p.image"
-                :alt="p.name"
-                class="prod-img"
-                @error="p.image = ''"
-              />
-              <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
+              <span class="stock-emoji">📦</span>
             </div>
             <div class="stock-details">
               <span class="prod-name">{{ p.name }}</span>

@@ -177,8 +177,7 @@
             @click="addToCart(s)"
           >
             <div class="tile-thumb">
-              <img v-if="isValidImage(s.image)" :src="s.image" :alt="s.product_name" class="tile-img" @error="s.image = ''" />
-              <span v-else class="stock-emoji">{{ s.emoji || '📦' }}</span>
+              <span class="stock-emoji">📦</span>
             </div>
             <div class="tile-info">
               <span class="stock-name">{{ s.product_name }}</span>

@@ -90,14 +90,7 @@
           <div class="stock-card-top">
             <div class="stock-left">
               <div class="prod-thumb">
-                <img
-                  v-if="isValidImage(p.image)"
-                  :src="p.image"
-                  :alt="p.name"
-                  class="prod-img"
-                  @error="onImgError(p)"
-                />
-                <span v-else class="stock-emoji">{{ p.emoji || '📦' }}</span>
+                <span class="stock-emoji">📦</span>
               </div>
               <div class="stock-details">
                 <span class="prod-name" :title="p.name">{{ p.name }}</span>
@@ -184,22 +177,7 @@
         </div>
 
         <div class="sheet-body">
-          <!-- Preview & Upload Gambar -->
-          <div class="image-upload-section">
-            <div class="preview-box">
-              <img v-if="editForm.image" :src="editForm.image" alt="Preview" class="uploaded-preview" />
-              <span v-else class="preview-placeholder">{{ editForm.emoji || '📦' }}</span>
-            </div>
-            <div class="upload-controls">
-              <label class="btn-upload-file">
-                <Icon name="camera" size="14" /> Pilih Gambar dari HP / Laptop
-                <input type="file" accept="image/*" class="hidden-file-input" @change="handleImageUpload($event, 'edit')" />
-              </label>
-              <button v-if="editForm.image" type="button" class="btn-remove-img" @click="editForm.image = ''">
-                Hapus Foto (Gunakan Emoji)
-              </button>
-            </div>
-          </div>
+
 
           <div class="form-group">
             <label>Nama Barang *</label>
@@ -343,22 +321,7 @@
         </div>
 
         <div class="sheet-body">
-          <!-- Preview & Upload Gambar Baru -->
-          <div class="image-upload-section">
-            <div class="preview-box">
-              <img v-if="newProd.image" :src="newProd.image" alt="Preview" class="uploaded-preview" />
-              <span v-else class="preview-placeholder">{{ newProd.emoji || '📦' }}</span>
-            </div>
-            <div class="upload-controls">
-              <label class="btn-upload-file">
-                <Icon name="camera" size="14" /> Pilih Gambar Barang
-                <input type="file" accept="image/*" class="hidden-file-input" @change="handleImageUpload($event, 'add')" />
-              </label>
-              <button v-if="newProd.image" type="button" class="btn-remove-img" @click="newProd.image = ''">
-                Hapus Foto
-              </button>
-            </div>
-          </div>
+
 
           <div class="form-group">
             <label>Nama Barang *</label>
