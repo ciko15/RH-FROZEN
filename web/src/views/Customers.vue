@@ -929,6 +929,8 @@ async function viewInvoiceDetail(invoiceId) {
   if (!invoiceId) return;
   try {
     const res = await apiFetch(`/api/invoices/${invoiceId}`);
+    // Tutup sidebar terlebih dahulu agar layar bersih dan fokus ke popup faktur / struk
+    closeCustomerDetailSidebar();
     activeInvoice.value = res.data;
   } catch (e) {
     appStore.showToast(e.message || 'Gagal memuat rincian faktur', 'error');
