@@ -35,6 +35,7 @@
           v-for="c in paginatedCustomers"
           :key="c.id"
           class="card cust-card"
+          @click="openCustomerDetailSidebar(c)"
         >
           <div class="cust-head">
             <div style="display:flex; align-items:center; gap:8px;">
@@ -59,14 +60,17 @@
             </div>
           </div>
 
-          <div class="cust-actions">
-            <button class="btn-edit-cust" @click="openEditModal(c)" title="Edit data pelanggan">
+          <div class="cust-actions" @click.stop>
+            <button class="btn-detail-quick" @click.stop="openCustomerDetailSidebar(c)" title="Lihat detail & riwayat hutang">
+              <Icon name="history" size="13" /> Riwayat
+            </button>
+            <button class="btn-edit-cust" @click.stop="openEditModal(c)" title="Edit data pelanggan">
               <Icon name="edit" size="13" /> Edit
             </button>
-            <button class="btn-price" @click="openPricesModal(c)" title="Atur harga khusus">
+            <button class="btn-price" @click.stop="openPricesModal(c)" title="Atur harga khusus">
               <Icon name="tag" size="13" /> Harga
             </button>
-            <button v-if="canDeleteCustomer" class="btn-delete-cust" @click="confirmDeleteCustomer(c)" title="Hapus pelanggan">
+            <button v-if="canDeleteCustomer" class="btn-delete-cust" @click.stop="confirmDeleteCustomer(c)" title="Hapus pelanggan">
               <Icon name="trash" size="13" /> Hapus
             </button>
           </div>
@@ -320,16 +324,268 @@
         </div>
       </div>
     </div>
+
+    <!-- SIDEBAR DETAIL CUSTOMER & RIWAYAT HUTANG / PEMBAYARAN / PENYESUAIAN -->
+    <div v-if="selectedCustForSidebar" class="sidebar-overlay" @click.self="closeCustomerDetailSidebar">
+      <div class="sidebar-drawer">
+        <div class="sidebar-header">
+          <div class="sidebar-title-box">
+            <span class="sidebar-pretitle">Detail Pelanggan & Piutang</span>
+            <h3>{{ selectedCustForSidebar.name }}</h3>
+            <span class="sidebar-subtitle">{{ selectedCustForSidebar.phone || 'Tanpa No HP' }} · {{ selectedCustForSidebar.address || 'Tanpa Alamat' }}</span>
+          </div>
+          <button class="btn-close-sidebar" @click="closeCustomerDetailSidebar" title="Tutup">
+            <Icon name="x" size="20" />
+          </button>
+        </div>
+
+        <!-- Info Ringkasan Saldo Hutang -->
+        <div class="sidebar-summary-card" :class="{ 'has-debt': (custDetailData?.customer?.balance || selectedCustForSidebar.balance) > 0 }">
+          <div class="summary-stat-item">
+            <span class="stat-label">Total Saldo Bon/Hutang</span>
+            <strong class="stat-value text-debt">
+              Rp {{ formatNumber(custDetailData?.customer?.balance !== undefined ? custDetailData.customer.balance : selectedCustForSidebar.balance) }}
+            </strong>
+          </div>
+          <div class="summary-stat-divider"></div>
+          <div class="summary-stat-item">
+            <span class="stat-label">Batas Kredit</span>
+            <strong class="stat-value">
+              {{ (custDetailData?.customer?.credit_limit || selectedCustForSidebar.credit_limit) > 0 ? 'Rp ' + formatNumber(custDetailData?.customer?.credit_limit || selectedCustForSidebar.credit_limit) : 'Tanpa Batas' }}
+            </strong>
+          </div>
+          <div class="summary-stat-divider"></div>
+          <div class="summary-stat-item">
+            <span class="stat-label">Tempo Jatuh Tempo</span>
+            <strong class="stat-value">
+              {{ formatNumber(custDetailData?.customer?.term_days || selectedCustForSidebar.term_days) }} Hari
+            </strong>
+          </div>
+        </div>
+
+        <!-- Tab Navigasi Sidebar -->
+        <div class="sidebar-tabs">
+          <button
+            class="sidebar-tab-btn"
+            :class="{ active: sidebarTab === 'debts' }"
+            @click="sidebarTab = 'debts'"
+          >
+            📋 Riwayat Hutang ({{ custDetailData?.debts?.length || 0 }})
+          </button>
+          <button
+            class="sidebar-tab-btn"
+            :class="{ active: sidebarTab === 'payments' }"
+            @click="sidebarTab = 'payments'"
+          >
+            💵 Riwayat Bayar ({{ custDetailData?.payments?.length || 0 }})
+          </button>
+          <button
+            class="sidebar-tab-btn"
+            :class="{ active: sidebarTab === 'adjustments' }"
+            @click="sidebarTab = 'adjustments'"
+          >
+            ⚖️ Penyesuaian Saldo ({{ custDetailData?.adjustments?.length || 0 }})
+          </button>
+        </div>
+
+        <!-- Konten Tab Sidebar -->
+        <div class="sidebar-body">
+          <div v-if="sidebarLoading" class="sidebar-loading-state">
+            <Icon name="history" size="30" class="spin-icon" />
+            <p>Memuat rincian transaksi & hutang...</p>
+          </div>
+
+          <!-- TAB 1: RIWAYAT HUTANG / FAKTUR -->
+          <div v-else-if="sidebarTab === 'debts'" class="tab-pane">
+            <div v-if="!custDetailData?.debts || custDetailData.debts.length === 0" class="sidebar-empty">
+              <Icon name="check" size="32" style="color:#059669;" />
+              <p>Belum ada riwayat hutang/faktur untuk pelanggan ini.</p>
+            </div>
+            <div v-else class="debt-items-list">
+              <!-- Item Hutang -->
+              <div
+                v-for="d in custDetailData.debts"
+                :key="d.id"
+                class="debt-item-card"
+                :class="{ 'is-unpaid': d.is_unpaid, 'is-paid': !d.is_unpaid, 'is-overdue': d.is_overdue }"
+              >
+                <div class="debt-card-top">
+                  <div class="debt-inv-info">
+                    <span class="debt-inv-no">
+                      <span v-if="d.is_initial_balance" style="color:#d97706;">📌 {{ d.title || 'Saldo Awal / Inputan Hutang' }}</span>
+                      <span v-else>#{{ d.invoice_no }}</span>
+                    </span>
+                    <span class="debt-date">{{ d.date }}</span>
+                  </div>
+                  <div class="debt-badges">
+                    <span v-if="d.is_overdue" class="badge-tag tag-overdue">
+                      ⚠️ Lewat Tempo ({{ d.overdue_days }} hr)
+                    </span>
+                    <span class="badge-tag" :class="d.is_unpaid ? 'tag-unpaid' : 'tag-paid'">
+                      {{ d.status }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="debt-amount-row">
+                  <div class="amount-col">
+                    <small>{{ d.is_initial_balance ? 'Nominal Hutang' : 'Total Belanja' }}</small>
+                    <span>Rp {{ formatNumber(d.total_due) }}</span>
+                  </div>
+                  <div class="amount-col">
+                    <small>Sudah Dibayar</small>
+                    <span class="text-success">Rp {{ formatNumber(d.paid_amount) }}</span>
+                  </div>
+                  <div class="amount-col highlight">
+                    <small>{{ d.is_unpaid ? 'Sisa Hutang' : 'Sisa' }}</small>
+                    <strong :class="d.is_unpaid ? 'text-debt' : 'text-muted'">Rp {{ formatNumber(d.remaining) }}</strong>
+                  </div>
+                </div>
+
+                <div v-if="d.note" style="font-size: 11px; color: var(--text-muted); font-style: italic;">
+                  {{ d.note }}
+                </div>
+
+                <div v-if="d.due_date && d.is_unpaid && !d.is_initial_balance" class="debt-due-info">
+                  <Icon name="calendar" size="12" />
+                  <span>Jatuh Tempo: <strong>{{ d.due_date }}</strong></span>
+                </div>
+
+                <div class="debt-card-actions">
+                  <template v-if="d.is_initial_balance">
+                    <button type="button" class="btn-refer-tx btn-sales-ref" @click="openEditModal(selectedCustForSidebar)" style="width: 100%;">
+                      <Icon name="edit" size="13" />
+                      <span>Edit Saldo Pelanggan</span>
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button type="button" class="btn-refer-tx" @click="viewInvoiceDetail(d.id)">
+                      <Icon name="eye" size="13" />
+                      <span>Lihat Faktur / Struk</span>
+                    </button>
+                    <button type="button" class="btn-refer-tx btn-sales-ref" @click="referToSalesKasir(d)">
+                      <Icon name="cart" size="13" />
+                      <span>Buka di Kasir / Edit</span>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: RIWAYAT PEMBAYARAN -->
+          <div v-else-if="sidebarTab === 'payments'" class="tab-pane">
+            <div v-if="!custDetailData?.payments || custDetailData.payments.length === 0" class="sidebar-empty">
+              <Icon name="cash" size="32" style="color:#64748b;" />
+              <p>Belum ada catatan pembayaran atau pelunasan.</p>
+            </div>
+            <div v-else class="payment-items-list">
+              <div
+                v-for="p in custDetailData.payments"
+                :key="p.id"
+                class="payment-item-card"
+              >
+                <div class="pay-card-top">
+                  <div class="pay-meta-col">
+                    <div class="pay-title-row">
+                      <span class="pay-type-tag">{{ p.type || 'Pelunasan' }}</span>
+                      <span class="pay-method-badge">{{ p.method }}</span>
+                    </div>
+                    <span class="pay-date">{{ p.date }}</span>
+                  </div>
+                  <strong class="pay-amount text-success">+ Rp {{ formatNumber(p.amount) }}</strong>
+                </div>
+
+                <div v-if="p.note" class="pay-note">
+                  <em>"{{ p.note }}"</em>
+                </div>
+
+                <div class="pay-card-bottom">
+                  <small class="pay-creator">Diterima oleh: {{ p.created_by_name }}</small>
+                  <button
+                    v-if="p.invoice_id"
+                    type="button"
+                    class="btn-ref-invoice-link"
+                    @click="viewInvoiceDetail(p.invoice_id)"
+                  >
+                    <Icon name="file-text" size="12" />
+                    <span>Faktur #{{ p.invoice_no || p.invoice_id }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: RIWAYAT PENYESUAIAN SALDO HUTANG -->
+          <div v-else-if="sidebarTab === 'adjustments'" class="tab-pane">
+            <div v-if="!custDetailData?.adjustments || custDetailData.adjustments.length === 0" class="sidebar-empty">
+              <Icon name="history" size="32" style="color:#64748b;" />
+              <p>Tidak ada riwayat penyesuaian saldo hutang manual.</p>
+            </div>
+            <div v-else class="adjust-items-list">
+              <div
+                v-for="adj in custDetailData.adjustments"
+                :key="adj.id"
+                class="adjust-item-card"
+              >
+                <div class="adj-header">
+                  <span class="adj-action-badge">{{ adj.action }}</span>
+                  <span class="adj-date">{{ adj.date_time }}</span>
+                </div>
+                <div class="adj-balance-comparison" v-if="adj.old_balance !== null || adj.new_balance !== null">
+                  <div class="bal-box">
+                    <small>Saldo Sebelum</small>
+                    <span>Rp {{ formatNumber(adj.old_balance || 0) }}</span>
+                  </div>
+                  <span class="adj-arrow">➔</span>
+                  <div class="bal-box">
+                    <small>Saldo Sesudah</small>
+                    <strong class="text-debt">Rp {{ formatNumber(adj.new_balance || 0) }}</strong>
+                  </div>
+                </div>
+                <div v-if="adj.reason" class="adj-reason">
+                  <strong>Catatan / Alasan:</strong> {{ adj.reason }}
+                </div>
+                <small class="adj-user">Oleh: {{ adj.user_name }}</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+          <button type="button" class="btn-sidebar-close" @click="closeCustomerDetailSidebar">
+            Tutup Sidebar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Pratinjau Invoice Referensi -->
+    <div v-if="activeInvoice" class="sheet-overlay" @click.self="activeInvoice = null" style="z-index: 1200;">
+      <div class="sheet-content" style="max-width: 600px;">
+        <div class="sheet-head">
+          <h3>Faktur #{{ activeInvoice.invoice_no }}</h3>
+          <button class="sheet-close" @click="activeInvoice = null"><Icon name="x" size="18" /></button>
+        </div>
+        <div class="sheet-body">
+          <InvoiceView :invoice="activeInvoice" @edit="onEditInvoiceFromRefer" />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import Icon from '../components/Icon.vue';
+import InvoiceView from '../components/InvoiceView.vue';
 import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import { formatNumber } from '../utils/format.js';
+
+const router = useRouter();
 
 function formatInputNumber(val) {
   if (val === '' || val === null || val === undefined) return '';
@@ -602,6 +858,58 @@ function onSearchInput() {
   searchTimer = setTimeout(() => {
     fetchCustomers();
   }, 300);
+}
+
+// ==========================================
+// SIDEBAR DETAIL CUSTOMER & RIWAYAT PIUTANG
+// ==========================================
+const selectedCustForSidebar = ref(null);
+const sidebarTab = ref('debts');
+const sidebarLoading = ref(false);
+const custDetailData = ref(null);
+const activeInvoice = ref(null);
+
+async function openCustomerDetailSidebar(c) {
+  selectedCustForSidebar.value = c;
+  sidebarTab.value = 'debts';
+  sidebarLoading.value = true;
+  custDetailData.value = null;
+
+  try {
+    const res = await apiFetch(`/api/customers/${c.id}/detail`);
+    custDetailData.value = res.data;
+  } catch (err) {
+    appStore.showToast('Gagal memuat detail pelanggan: ' + err.message, 'error');
+  } finally {
+    sidebarLoading.value = false;
+  }
+}
+
+function closeCustomerDetailSidebar() {
+  selectedCustForSidebar.value = null;
+  custDetailData.value = null;
+}
+
+async function viewInvoiceDetail(invoiceId) {
+  if (!invoiceId) return;
+  try {
+    const res = await apiFetch(`/api/invoices/${invoiceId}`);
+    activeInvoice.value = res.data;
+  } catch (e) {
+    appStore.showToast(e.message || 'Gagal memuat rincian faktur', 'error');
+  }
+}
+
+function onEditInvoiceFromRefer(inv) {
+  activeInvoice.value = null;
+  closeCustomerDetailSidebar();
+  router.push(`/sales?edit_invoice_id=${inv.id}`);
+}
+
+function referToSalesKasir(debtItem) {
+  closeCustomerDetailSidebar();
+  // Alihkan ke halaman kasir penjualan dengan parameter edit transaksi
+  router.push(`/sales?edit_invoice_id=${debtItem.id}`);
 }
 
 onMounted(() => {
@@ -895,5 +1203,514 @@ onMounted(() => {
   min-height: 44px;
   font-size: 15px;
   margin-top: 8px;
+}
+
+/* Tombol Cepat Riwayat di Kartu Pelanggan */
+.btn-detail-quick {
+  background: rgba(2, 132, 199, 0.1);
+  color: #0284c7;
+  border: 1px solid rgba(2, 132, 199, 0.25);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+.btn-detail-quick:hover {
+  background: #0284c7;
+  color: #fff;
+}
+
+/* ==========================================
+   SIDEBAR DRAWER STYLES
+   ========================================== */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 1100;
+  display: flex;
+  justify-content: flex-end;
+  animation: fadeIn 0.2s ease;
+}
+
+.sidebar-drawer {
+  width: 100%;
+  max-width: 580px;
+  height: 100%;
+  background: var(--bg-card, #fff);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.18);
+  animation: slideLeft 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideLeft {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.sidebar-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--bg-card, #fff);
+}
+.sidebar-pretitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #0284c7;
+  display: block;
+  margin-bottom: 2px;
+}
+.sidebar-title-box h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-main, #0f172a);
+}
+.sidebar-subtitle {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  margin-top: 4px;
+  display: block;
+}
+.btn-close-sidebar {
+  background: var(--bg-app, #f1f5f9);
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.btn-close-sidebar:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* Summary Card */
+.sidebar-summary-card {
+  margin: 14px 20px 0;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sidebar-summary-card.has-debt {
+  background: #fff5f5;
+  border-color: #fecaca;
+}
+.summary-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  font-weight: 500;
+}
+.stat-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main, #1e293b);
+}
+.text-debt {
+  color: #dc2626 !important;
+}
+.summary-stat-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--border-color, #e2e8f0);
+}
+
+/* Tabs */
+.sidebar-tabs {
+  display: flex;
+  padding: 12px 20px 0;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+.sidebar-tab-btn {
+  flex: 1;
+  padding: 10px 8px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.sidebar-tab-btn.active {
+  color: #0284c7;
+  border-bottom-color: #0284c7;
+  font-weight: 700;
+}
+
+/* Body */
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+.sidebar-loading-state, .sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--text-muted, #64748b);
+  gap: 8px;
+  font-size: 13px;
+}
+.spin-icon {
+  color: #0284c7;
+  animation: spin 1.2s linear infinite;
+}
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+/* Debt items list */
+.debt-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.debt-item-card {
+  padding: 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border-color, #e2e8f0);
+  background: var(--bg-card, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.15s ease;
+}
+.debt-item-card.is-unpaid {
+  border-color: #fed7aa;
+  background: #fffbf7;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.05);
+}
+.debt-item-card.is-overdue {
+  border-color: #fca5a5;
+  background: #fff5f5;
+}
+.debt-item-card.is-paid {
+  opacity: 0.85;
+}
+
+.debt-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.debt-inv-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.debt-inv-no {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+}
+.debt-date {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+.debt-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.badge-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.tag-unpaid {
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+.tag-paid {
+  background: #d1fae5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.tag-overdue {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.debt-amount-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+}
+.amount-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.amount-col small {
+  font-size: 10px;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+}
+.amount-col span, .amount-col strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.debt-due-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 4px 8px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.debt-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.btn-refer-tx {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-color, #cbd5e1);
+  background: #fff;
+  color: var(--text-main, #1e293b);
+  transition: all 0.15s ease;
+}
+.btn-refer-tx:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+.btn-sales-ref {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+.btn-sales-ref:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+/* Payments items list */
+.payment-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.payment-item-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: var(--bg-card, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pay-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.pay-meta-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pay-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pay-type-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+}
+.pay-method-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 4px;
+}
+.pay-date {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+.pay-amount {
+  font-size: 15px;
+  font-weight: 700;
+}
+.pay-note {
+  font-size: 12px;
+  color: var(--text-muted, #475569);
+  background: #f8fafc;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+.pay-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+.btn-ref-invoice-link {
+  background: none;
+  border: none;
+  color: #0284c7;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.btn-ref-invoice-link:hover {
+  background: #f0f9ff;
+  text-decoration: underline;
+}
+
+/* Adjustments items list */
+.adjust-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.adjust-item-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.adj-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.adj-action-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  background: #fef3c7;
+  color: #b45309;
+  border-radius: 6px;
+}
+.adj-date {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+.adj-balance-comparison {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.bal-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bal-box small {
+  font-size: 10px;
+  color: var(--text-muted, #64748b);
+}
+.adj-arrow {
+  color: #94a3b8;
+  font-weight: 700;
+}
+.adj-reason {
+  font-size: 12px;
+  color: var(--text-main, #1e293b);
+  background: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px dashed #cbd5e1;
+}
+.adj-user {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+  background: var(--bg-card, #fff);
+}
+.btn-sidebar-close {
+  width: 100%;
+  padding: 11px;
+  background: var(--bg-app, #f1f5f9);
+  color: var(--text-main, #1e293b);
+  border: 1px solid var(--border-color, #cbd5e1);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-sidebar-close:hover {
+  background: #e2e8f0;
 }
 </style>

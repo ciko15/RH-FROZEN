@@ -163,6 +163,10 @@
           </div>
 
           <div class="action-buttons">
+            <button v-if="canProceedToSale" class="btn-action btn-proceed-sale" @click="openCustomerPickerForTransaction()">
+              <Icon name="cart" size="16" />
+              <span>Lanjutkan ke Transaksi</span>
+            </button>
             <button v-if="canShip" class="btn-action btn-ship" :disabled="actionLoading" @click="openShipModal">
               <Icon name="truck" size="16" />
               <span>Konfirmasi Pengiriman</span>
@@ -180,6 +184,7 @@
               <span>Batalkan</span>
             </button>
           </div>
+          <p v-if="canProceedToSale" class="hint">Order sudah dikirim. Klik untuk memilih customer dan memasukkan barang ke kasir transaksi.</p>
           <p v-if="canShip" class="hint">Klik konfirmasi untuk memeriksa & mengubah jumlah barang yang dikirim.</p>
         </div>
       </div>
@@ -392,17 +397,118 @@
         </div>
       </div>
     </div>
+
+    <!-- MODAL PILIH CUSTOMER UNTUK LANJUTKAN KE TRANSAKSI -->
+    <div v-if="showSelectCustomerModal" class="sheet-overlay" @click.self="showSelectCustomerModal = false">
+      <div class="sheet-content customer-picker-sheet">
+        <div class="sheet-header">
+          <div>
+            <h3>Pilih Customer Transaksi</h3>
+            <span class="subtext">Lanjutkan Order #{{ orderToProceed?.order_no }} ke Kasir Penjualan</span>
+          </div>
+          <button class="sheet-close" @click="showSelectCustomerModal = false"><Icon name="x" size="18" /></button>
+        </div>
+
+        <div class="sheet-body">
+          <div class="order-info-banner">
+            <Icon name="package" size="16" />
+            <div>
+              <strong>Order #{{ orderToProceed?.order_no }} ({{ orderToProceed?.items?.length || 0 }} barang)</strong>
+              <p>Seluruh barang yang telah dikirim akan otomatis dimasukkan ke keranjang kasir untuk customer yang Anda pilih.</p>
+            </div>
+          </div>
+
+          <!-- Input Search Pelanggan -->
+          <div class="cust-modal-search-box">
+            <Icon name="search" size="15" class="cust-modal-search-icon" />
+            <input
+              v-model="customerSearchText"
+              type="text"
+              placeholder="Cari nama atau nomor telepon customer..."
+              class="cust-modal-search-input"
+            />
+            <button
+              v-if="customerSearchText"
+              type="button"
+              class="btn-clear-search"
+              @click="customerSearchText = ''"
+            >
+              <Icon name="x" size="14" />
+            </button>
+          </div>
+
+          <!-- Loading state -->
+          <div v-if="customerLoading" class="cust-picker-loading">
+            Memuat daftar customer...
+          </div>
+
+          <!-- List Pelanggan -->
+          <div v-else class="cust-picker-list">
+            <div v-if="filteredCustomersForTx.length === 0" class="cust-empty">
+              Tidak ada customer yang sesuai pencarian "{{ customerSearchText }}"
+            </div>
+            <div
+              v-for="c in filteredCustomersForTx"
+              :key="c.id"
+              class="cust-card-item"
+              :class="{
+                'is-selected': selectedCustomerIdForTx === c.id,
+                'has-debt': c.balance > 0
+              }"
+              @click="selectCustomerForTx(c)"
+            >
+              <div class="cust-card-left">
+                <div class="cust-name-row">
+                  <span class="cust-name-text">{{ c.name }}</span>
+                  <span v-if="c.balance > 0" class="tag-bon">⚠️ Ada Bon</span>
+                </div>
+                <div class="cust-details-text">
+                  <span>📞 {{ c.phone || 'Tanpa No HP' }}</span>
+                  <span v-if="c.address"> · 📍 {{ c.address }}</span>
+                </div>
+              </div>
+              <div class="cust-card-right">
+                <span v-if="c.balance > 0" class="cust-debt-amt">
+                  Bon: Rp {{ formatNumber(c.balance) }}
+                </span>
+                <span v-else class="cust-lunas-badge">Lunas</span>
+                <div class="cust-radio-check">
+                  <span v-if="selectedCustomerIdForTx === c.id">✓</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sheet-footer">
+            <button type="button" class="btn-secondary" @click="showSelectCustomerModal = false">
+              Batal
+            </button>
+            <button
+              type="button"
+              class="btn-primary"
+              :disabled="!selectedCustomerIdForTx"
+              @click="proceedOrderToSalesPos"
+            >
+              <Icon name="cart" size="16" />
+              <span>Masuk ke Transaksi Kasir</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { apiFetch } from '../api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { useAppStore } from '../stores/app.js';
 import Icon from '../components/Icon.vue';
 import { formatNumber } from '../utils/format.js';
 
+const router = useRouter();
 const authStore = useAuthStore();
 const appStore = useAppStore();
 const role = computed(() => authStore.user?.role);
@@ -446,6 +552,93 @@ const canShip = computed(() => isAdmin.value && selected.value?.status === 'Pros
 const canCancel = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
 const canEditOrder = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
 const canDeleteOrder = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
+const canProceedToSale = computed(() => selected.value?.status === 'Dikirim');
+
+// Modal Pilih Pelanggan untuk Lanjut Transaksi
+const showSelectCustomerModal = ref(false);
+const orderToProceed = ref(null);
+const customerList = ref([]);
+const customerLoading = ref(false);
+const selectedCustomerIdForTx = ref('');
+const customerSearchText = ref('');
+
+const filteredCustomersForTx = computed(() => {
+  const q = customerSearchText.value.toLowerCase().trim();
+  if (!q) return customerList.value;
+  return customerList.value.filter(c =>
+    (c.name && String(c.name).toLowerCase().includes(q)) ||
+    (c.phone && String(c.phone).includes(q)) ||
+    (c.address && String(c.address).toLowerCase().includes(q))
+  );
+});
+
+async function openCustomerPickerForTransaction(order) {
+  const ord = order || selected.value;
+  if (!ord || ord.status !== 'Dikirim') return;
+  orderToProceed.value = ord;
+  selectedCustomerIdForTx.value = '';
+  customerSearchText.value = '';
+  showSelectCustomerModal.value = true;
+
+  if (customerList.value.length === 0) {
+    customerLoading.value = true;
+    try {
+      const res = await apiFetch('/api/customers');
+      customerList.value = (res.data || []).filter(c => c.active !== false);
+    } catch (err) {
+      appStore.showToast('Gagal memuat data pelanggan: ' + err.message, 'error');
+    } finally {
+      customerLoading.value = false;
+    }
+  }
+}
+
+function selectCustomerForTx(c) {
+  selectedCustomerIdForTx.value = c.id;
+}
+
+function proceedOrderToSalesPos() {
+  if (!selectedCustomerIdForTx.value) {
+    return appStore.showToast('Silakan pilih nama customer terlebih dahulu', 'warning');
+  }
+  if (!orderToProceed.value) return;
+
+  const ord = orderToProceed.value;
+  const itemsToTransfer = (ord.items || [])
+    .map(it => {
+      const shippedQty = it.qty_shipped !== null && it.qty_shipped !== undefined
+        ? parseInt(it.qty_shipped, 10)
+        : parseInt(it.qty, 10);
+      return {
+        product_id: it.product_id,
+        product_name: it.product_name || it.name,
+        qty: shippedQty > 0 ? shippedQty : parseInt(it.qty, 10) || 1
+      };
+    })
+    .filter(it => it.qty > 0);
+
+  if (itemsToTransfer.length === 0) {
+    return appStore.showToast('Tidak ada barang dalam pesanan ini untuk ditransaksikan', 'warning');
+  }
+
+  const payload = {
+    order_id: ord.id,
+    order_no: ord.order_no,
+    customer_id: selectedCustomerIdForTx.value,
+    items: itemsToTransfer
+  };
+
+  try {
+    sessionStorage.setItem('rh_order_to_tx', JSON.stringify(payload));
+  } catch (err) {
+    console.warn('Gagal menyimpan sesi order_to_tx:', err);
+  }
+
+  showSelectCustomerModal.value = false;
+  selected.value = null;
+  appStore.showToast(`Memindahkan data Order #${ord.order_no} ke Kasir Penjualan...`, 'info');
+  router.push('/sales?from_order=true');
+}
 
 // State & Fungsi Edit Pesanan
 const showEditOrderModal = ref(false);
@@ -1570,5 +1763,204 @@ onMounted(load);
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Lanjutkan ke Transaksi Button */
+.btn-proceed-sale {
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+}
+.btn-proceed-sale:hover {
+  background: linear-gradient(135deg, #0369a1, #075985);
+}
+
+/* Customer Picker Modal */
+.customer-picker-sheet {
+  max-width: 540px;
+}
+.order-info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  color: #166534;
+  font-size: 12px;
+}
+.order-info-banner strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.order-info-banner p {
+  margin: 0;
+  color: #15803d;
+  line-height: 1.4;
+}
+
+.cust-modal-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.cust-modal-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted, #94a3b8);
+  pointer-events: none;
+}
+.cust-modal-search-input {
+  width: 100%;
+  height: 42px;
+  padding: 0 36px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-color, #e2e8f0);
+  background: var(--bg-card, #fff);
+  color: var(--text-main, #1e293b);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.cust-modal-search-input:focus {
+  border-color: #0284c7;
+}
+.btn-clear-search {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.cust-picker-loading {
+  text-align: center;
+  padding: 30px 16px;
+  font-size: 13px;
+  color: var(--text-muted, #94a3b8);
+}
+.cust-empty {
+  text-align: center;
+  padding: 30px 16px;
+  font-size: 13px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.cust-picker-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+}
+.cust-card-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border-color, #e2e8f0);
+  border-radius: 10px;
+  background: var(--bg-card, #fff);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cust-card-item:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.cust-card-item.is-selected {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 1px #0284c7;
+}
+.cust-card-item.has-debt {
+  background: #fffbfb;
+}
+.cust-card-item.has-debt.is-selected {
+  background: #eff6ff;
+  border-color: #0284c7;
+}
+
+.cust-card-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.cust-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cust-name-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main, #1e293b);
+}
+.tag-bon {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+.cust-details-text {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cust-card-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: 10px;
+}
+.cust-debt-amt {
+  font-size: 11px;
+  font-weight: 700;
+  color: #dc2626;
+  background: #fee2e2;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.cust-lunas-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #059669;
+  background: #d1fae5;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.cust-radio-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color, #cbd5e1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  transition: all 0.15s ease;
+}
+.cust-card-item.is-selected .cust-radio-check {
+  background: #0284c7;
+  border-color: #0284c7;
 }
 </style>

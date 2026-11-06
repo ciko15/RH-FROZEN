@@ -1074,6 +1074,51 @@ async function loadInvoiceToCart(inv) {
   appStore.showToast(`Mode edit transaksi #${fullInv.invoice_no} aktif. Anda dapat menambah atau mengurangi barang langsung di kasir.`, 'info');
 }
 
+async function loadOrderSessionToCart(orderData) {
+  if (!orderData || !orderData.items) return;
+
+  // Set customer yang dipilih
+  if (orderData.customer_id) {
+    selectedCustomerId.value = orderData.customer_id;
+    await loadCustomerPrices(orderData.customer_id);
+  }
+
+  // Masukkan item-item yang dikirim ke dalam cart
+  cart.value = (orderData.items || []).map(it => {
+    const s = stock.value.find(st => st.product_id === it.product_id);
+    const curStock = s ? (parseInt(s.stock, 10) || 0) : 0;
+    const requestedQty = parseInt(it.qty, 10) || 1;
+    const isCustom = hasCustomPrice(it.product_id);
+    const defPrice = s ? parseFloat(s.price || 0) : 0;
+    const effPrice = isCustom ? (customerPrices.value.get(it.product_id) || defPrice) : defPrice;
+
+    return {
+      product_id: it.product_id,
+      product_name: it.product_name || s?.product_name || 'Produk',
+      emoji: s?.emoji || '📦',
+      image: s?.image || '',
+      defaultPrice: defPrice,
+      price: effPrice,
+      isCustomPrice: isCustom,
+      qty: requestedQty,
+      maxStock: Math.max(requestedQty, curStock),
+      discount: 0,
+      showDisc: false
+    };
+  });
+
+  if (orderData.order_no) {
+    txNote.value = `Order #${orderData.order_no}`;
+  }
+
+  if (payMethod.value !== 'Tempo') {
+    paidAmount.value = totalDue.value;
+  }
+
+  tab.value = 'pos';
+  appStore.showToast(`Data Order #${orderData.order_no || ''} berhasil dimasukkan ke transaksi!`, 'success');
+}
+
 function openEditInvoiceModal(inv) {
   loadInvoiceToCart(inv);
 }
@@ -1258,6 +1303,18 @@ onMounted(async () => {
   await Promise.all([loadData(), loadInvoices()]);
   loadLocalDrafts();
   document.addEventListener('click', handleClickOutside);
+
+  // Jika dipanggil dari order yang dikirim (from_order)
+  try {
+    const rawOrderSession = sessionStorage.getItem('rh_order_to_tx');
+    if (rawOrderSession) {
+      sessionStorage.removeItem('rh_order_to_tx');
+      const parsedOrder = JSON.parse(rawOrderSession);
+      await loadOrderSessionToCart(parsedOrder);
+    }
+  } catch (err) {
+    console.warn('Gagal membaca sesi order_to_tx:', err);
+  }
 
   // Jika dipanggil dengan query param edit_invoice_id (misal dari riwayat penjualan)
   if (route.query.edit_invoice_id) {

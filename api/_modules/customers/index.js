@@ -179,9 +179,21 @@ export default async function handler(req, res) {
         active: data.active !== undefined ? (data.active ? 'TRUE' : 'FALSE') : (cust.active || 'TRUE')
       };
 
+      const oldBalance = parseFloat(cust.balance || 0);
+      const newBalance = parseFloat(updatedCust.balance || 0);
+      const balanceChanged = Math.abs(oldBalance - newBalance) > 0.01;
+
       await updateRow('Customers', cust._rowIndex, updatedCust, CUST_HEADERS);
       clearCache('Customers');
-      await logAudit(authUser.id, 'UPDATE_CUSTOMER', { id: data.id, name: updatedCust.name });
+      
+      await logAudit(authUser.id, balanceChanged ? 'ADJUST_CUSTOMER_BALANCE' : 'UPDATE_CUSTOMER', {
+        id: data.id,
+        name: updatedCust.name,
+        old_balance: oldBalance,
+        new_balance: newBalance,
+        diff: newBalance - oldBalance,
+        reason: data.reason || (balanceChanged ? 'Penyesuaian saldo piutang manual' : '')
+      });
 
       return res.status(200).json({
         ok: true,

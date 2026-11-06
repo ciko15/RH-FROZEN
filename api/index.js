@@ -156,6 +156,12 @@ export default async function handler(req, res) {
     }
 
     // 7. Customers
+    const custDetailMatch = pathname.match(/^\/api\/customers\/([^/]+)\/detail$/);
+    if (custDetailMatch) {
+      req.query.id = custDetailMatch[1];
+      const { default: h } = await import('./_modules/customers/[id]/detail.js');
+      return await h(req, res);
+    }
     const custPricesMatch = pathname.match(/^\/api\/customers\/([^/]+)\/prices$/);
     if (custPricesMatch) {
       req.query.id = custPricesMatch[1];
