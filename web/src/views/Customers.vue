@@ -453,9 +453,15 @@
 
                 <div class="debt-card-actions">
                   <template v-if="d.is_initial_balance">
-                    <button type="button" class="btn-refer-tx btn-sales-ref" @click="openEditModal(selectedCustForSidebar)" style="width: 100%;">
+                    <button
+                      v-if="canEditCustomerDebt"
+                      type="button"
+                      class="btn-refer-tx btn-sales-ref"
+                      @click="handleEditDebtFromSidebar(selectedCustForSidebar)"
+                      style="width: 100%;"
+                    >
                       <Icon name="edit" size="13" />
-                      <span>Edit Saldo Pelanggan</span>
+                      <span>Edit Hutang Pelanggan</span>
                     </button>
                   </template>
                   <template v-else>
@@ -604,6 +610,7 @@ const authStore = useAuthStore();
 const appStore = useAppStore();
 const user = computed(() => authStore.user);
 const canDeleteCustomer = computed(() => ['admin', 'manajer'].includes(user.value?.role));
+const canEditCustomerDebt = computed(() => ['admin', 'manajer'].includes(user.value?.role));
 
 const loading = ref(false);
 const customers = ref([]);
@@ -910,6 +917,14 @@ function referToSalesKasir(debtItem) {
   closeCustomerDetailSidebar();
   // Alihkan ke halaman kasir penjualan dengan parameter edit transaksi
   router.push(`/sales?edit_invoice_id=${debtItem.id}`);
+}
+
+function handleEditDebtFromSidebar(c) {
+  const custToEdit = c || selectedCustForSidebar.value;
+  closeCustomerDetailSidebar();
+  if (custToEdit) {
+    openEditModal(custToEdit);
+  }
 }
 
 onMounted(() => {
