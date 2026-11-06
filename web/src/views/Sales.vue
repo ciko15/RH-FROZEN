@@ -297,13 +297,13 @@
             <span>Subtotal Setelah Diskon</span>
             <strong>Rp {{ fmt(cartNetSubtotal) }}</strong>
           </div>
-          <div class="sum-row">
-            <span>Bon / Piutang Sebelumnya</span>
-            <span :class="selectedCustomer?.balance > 0 ? 'text-danger font-bold' : ''">Rp {{ fmt(selectedCustomer?.balance || 0) }}</span>
-          </div>
           <div class="sum-row total">
-            <span>Total Tagihan</span>
+            <span>Total Transaksi Ini</span>
             <strong class="total-big">Rp {{ fmt(totalDue) }}</strong>
+          </div>
+          <div class="sum-row" v-if="selectedCustomer && Number(selectedCustomer?.balance) > 0" style="padding: 6px 10px; background: rgba(239, 68, 68, 0.08); border-radius: 6px; margin: 6px 0;">
+            <span class="text-danger font-bold" style="font-size: 13px;">Hutang Bon Sebelumnya</span>
+            <span class="text-danger font-bold" style="font-size: 13px;">Rp {{ fmt(selectedCustomer?.balance || 0) }}</span>
           </div>
 
           <div class="pay-form">
@@ -844,7 +844,7 @@ const cartGrossSubtotal = computed(() => cart.value.reduce((s, it) => s + (it.qt
 const cartTotalDiscount = computed(() => cart.value.reduce((s, it) => s + (Number(it.discount) || 0), 0));
 const cartNetSubtotal = computed(() => Math.max(0, cartGrossSubtotal.value - cartTotalDiscount.value));
 const cartTotal = computed(() => cartNetSubtotal.value);
-const totalDue = computed(() => cartNetSubtotal.value + parseFloat(selectedCustomer.value?.balance || 0));
+const totalDue = computed(() => cartNetSubtotal.value);
 
 function fmt(n) {
   return formatNumber(n);

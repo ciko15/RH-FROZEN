@@ -421,7 +421,14 @@
                     <span v-if="d.is_overdue" class="badge-tag tag-overdue">
                       ⚠️ Lewat Tempo ({{ d.overdue_days }} hr)
                     </span>
-                    <span class="badge-tag" :class="d.is_unpaid ? 'tag-unpaid' : 'tag-paid'">
+                    <span
+                      class="badge-tag"
+                      :class="{
+                        'tag-unpaid': d.status === 'Belum Lunas',
+                        'tag-partial': d.status === 'Sebagian',
+                        'tag-paid': d.status === 'Lunas'
+                      }"
+                    >
                       {{ d.status }}
                     </span>
                   </div>
@@ -538,15 +545,19 @@
                   <span class="adj-action-badge">{{ adj.action }}</span>
                   <span class="adj-date">{{ adj.date_time }}</span>
                 </div>
-                <div class="adj-balance-comparison" v-if="adj.old_balance !== null || adj.new_balance !== null">
+                <div class="adj-balance-comparison">
                   <div class="bal-box">
                     <small>Saldo Sebelum</small>
-                    <span>Rp {{ formatNumber(adj.old_balance || 0) }}</span>
+                    <span :class="adj.old_balance !== null ? '' : 'text-muted'">
+                      {{ adj.old_balance !== null ? 'Rp ' + formatNumber(adj.old_balance) : 'Tidak tercatat' }}
+                    </span>
                   </div>
                   <span class="adj-arrow">➔</span>
                   <div class="bal-box">
                     <small>Saldo Sesudah</small>
-                    <strong class="text-debt">Rp {{ formatNumber(adj.new_balance || 0) }}</strong>
+                    <strong class="text-debt">
+                      {{ adj.new_balance !== null ? 'Rp ' + formatNumber(adj.new_balance) : 'Rp ' + formatNumber(selectedCustForSidebar.balance) }}
+                    </strong>
                   </div>
                 </div>
                 <div v-if="adj.reason" class="adj-reason">
@@ -763,14 +774,19 @@ async function submitCreateCustomer() {
   }
 
   // 1. INSTAN: Langsung masukkan data ke tampilan tanpa perlu menunggu Google Apps Script
+  const branchId = user.value?.role === 'sales'
+    ? (user.value?.branch_id || 'BR-WONOSOBO')
+    : (newCust.value.branch_id || user.value?.branch_id || branches.value[0]?.id || 'BR-KERTEK');
+  const salesId = user.value?.role === 'sales' ? user.value.id : (newCust.value.sales_id || user.value?.id || '');
+
   const tempId = 'temp-' + Date.now();
   const addedItem = {
     id: tempId,
     name: newCust.value.name.trim(),
     address: newCust.value.address || '',
     phone: newCust.value.phone || '',
-    branch_id: newCust.value.branch_id || user.value?.branch_id || 'BR-KERTEK',
-    sales_id: user.value?.role === 'sales' ? user.value.id : (newCust.value.sales_id || user.value?.id || ''),
+    branch_id: branchId,
+    sales_id: salesId,
     sales_name: user.value?.full_name || '',
     balance: 0,
     credit_limit: parseFloat(newCust.value.credit_limit || 0),
@@ -783,8 +799,20 @@ async function submitCreateCustomer() {
   showAddModal.value = false;
   appStore.showToast('Pelanggan berhasil ditambahkan!', 'success');
 
-  const payloadToSend = { ...newCust.value };
-  newCust.value = { name: '', address: '', phone: '', branch_id: branches.value[0]?.id || '', sales_id: '', credit_limit: 0, term_days: 14 };
+  const payloadToSend = {
+    ...newCust.value,
+    branch_id: branchId,
+    sales_id: salesId
+  };
+  newCust.value = {
+    name: '',
+    address: '',
+    phone: '',
+    branch_id: user.value?.branch_id || branches.value[0]?.id || '',
+    sales_id: '',
+    credit_limit: 0,
+    term_days: 14
+  };
 
   // 2. DI BALIK LAYAR: Simpan ke Google Sheet secara asinkron
   appStore.startSync();
@@ -1476,6 +1504,11 @@ onMounted(() => {
   background: #ffedd5;
   color: #c2410c;
   border: 1px solid #fed7aa;
+}
+.tag-partial {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
 }
 .tag-paid {
   background: #d1fae5;

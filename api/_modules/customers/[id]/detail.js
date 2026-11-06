@@ -30,12 +30,16 @@ export default async function handler(req, res) {
     const users = tabs.Users || [];
 
     // 1. INVOICES / HUTANG
+    const customerBalance = parseFloat(customer.balance || 0);
     const customerInvoices = invoices.filter(inv => inv.customer_id === customerId);
     const debts = customerInvoices.map(inv => {
-      const totalDue = parseFloat(inv.total_due || 0);
-      const remaining = parseFloat(inv.remaining !== undefined && inv.remaining !== '' ? inv.remaining : (inv.pay_method === 'Tempo' ? totalDue : 0));
-      const paid = Math.max(0, totalDue - remaining);
-      const isUnpaid = remaining > 0;
+      // Nilai belanja murni invoice
+      const invoiceSubtotal = parseFloat(inv.subtotal || 0) || (parseFloat(inv.total_due || 0) - parseFloat(inv.previous_balance || 0));
+      const paid = parseFloat(inv.paid_amount || 0);
+
+      // Hitung sisa hutang murni dari invoice ini saja:
+      const pureRemaining = Math.max(0, invoiceSubtotal - paid);
+      const isUnpaid = pureRemaining > 0;
 
       // Hitung overdue jika ada due_date
       let isOverdue = false;
@@ -56,9 +60,9 @@ export default async function handler(req, res) {
         date: `${inv.invoice_date || inv.tx_date || ''} ${inv.invoice_time || inv.tx_time || ''}`.trim(),
         due_date: inv.due_date || '',
         pay_method: inv.pay_method || 'Tempo',
-        total_due: totalDue,
+        total_due: invoiceSubtotal, // Nilai belanja faktur ini saja
         paid_amount: paid,
-        remaining: remaining,
+        remaining: pureRemaining, // Sisa hutang murni dari transaksi ini saja
         status: isUnpaid ? 'Belum Lunas' : 'Lunas',
         is_unpaid: isUnpaid,
         is_overdue: isOverdue,
@@ -68,13 +72,23 @@ export default async function handler(req, res) {
       };
     });
 
-    // Cek jika ada saldo hutang pelanggan di tab Customers
-    const customerBalance = parseFloat(customer.balance || 0);
+    // Cek jika ada saldo hutang awal atau pembayaran langsung (Pelunasan Piutang)
     const totalRemainingFromInvoices = debts.reduce((sum, d) => sum + (d.remaining || 0), 0);
 
-    // Jika customer memiliki saldo hutang (balance > 0) dan ada selisih dari invoice (misal saldo awal/inputan manual admin)
-    if (customerBalance > 0 && customerBalance > totalRemainingFromInvoices) {
-      const initialDebtAmount = customerBalance - totalRemainingFromInvoices;
+    // Hitung seluruh pembayaran piutang langsung (tanpa invoice_id) untuk customer ini
+    const directPayments = payments.filter(p => p.customer_id === customerId && !p.invoice_id);
+    const totalDirectPaid = directPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
+    // Sisa hutang saldo awal / bon lama yang belum terbayar
+    const remainingInitial = Math.max(0, customerBalance - totalRemainingFromInvoices);
+
+    // Total nominal hutang saldo awal sebelum dicicil langsung
+    const rawInitialDebt = remainingInitial + totalDirectPaid;
+
+    if (rawInitialDebt > 0 || totalDirectPaid > 0 || remainingInitial > 0) {
+      const isInitialUnpaid = remainingInitial > 0;
+      const initialPaid = Math.min(rawInitialDebt, totalDirectPaid);
+
       debts.unshift({
         id: `INIT-${customerId}`,
         invoice_no: 'SALDO-AWAL',
@@ -82,15 +96,17 @@ export default async function handler(req, res) {
         date: 'Saldo Berjalan',
         due_date: `${customer.term_days || 14} Hari`,
         pay_method: 'Tempo',
-        total_due: initialDebtAmount,
-        paid_amount: 0,
-        remaining: initialDebtAmount,
-        status: 'Belum Lunas',
-        is_unpaid: true,
+        total_due: rawInitialDebt > 0 ? rawInitialDebt : initialPaid,
+        paid_amount: initialPaid,
+        remaining: remainingInitial,
+        status: isInitialUnpaid ? (initialPaid > 0 ? 'Sebagian' : 'Belum Lunas') : 'Lunas',
+        is_unpaid: isInitialUnpaid,
         is_overdue: false,
         overdue_days: 0,
         is_initial_balance: true,
-        note: 'Inputan saldo hutang awal / penyesuaian saldo pelanggan dari admin'
+        note: isInitialUnpaid
+          ? (initialPaid > 0 ? `Sudah dicicil Rp ${initialPaid.toLocaleString('id-ID')}, sisa hutang Rp ${remainingInitial.toLocaleString('id-ID')}` : 'Inputan saldo hutang awal dari admin')
+          : `Sudah lunas dibayarkan (Total lunas: Rp ${initialPaid.toLocaleString('id-ID')})`
       });
     }
 
@@ -127,7 +143,7 @@ export default async function handler(req, res) {
     customerPayments.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // 3. RIWAYAT PENYESUAIAN HUTANG / AUDIT PENYESUAIAN
-    // Mencari entri audit log terkait customer ini
+    // Mencari entri audit log terkait penyesuaian saldo / edit hutang customer ini
     const adjustments = [];
     auditLogs.forEach(log => {
       try {
@@ -138,31 +154,50 @@ export default async function handler(req, res) {
           detail = log.detail_json || {};
         }
 
-        if (detail.id === customerId || detail.customer_id === customerId) {
+        // Cek kecocokan customer
+        const isMatch = detail.id === customerId || detail.customer_id === customerId;
+        if (!isMatch) return;
+
+        // Hanya masukkan log yang relevan dengan saldo hutang atau update customer
+        const isBalanceAdj = log.action === 'ADJUST_CUSTOMER_BALANCE' || detail.old_balance !== undefined || detail.new_balance !== undefined;
+        const isCustomerUpdate = log.action === 'UPDATE_CUSTOMER';
+
+        if (isBalanceAdj || isCustomerUpdate) {
           const user = users.find(u => u.id === log.user_id);
+          
+          let oldBal = detail.old_balance !== undefined ? detail.old_balance : null;
+          let newBal = detail.new_balance !== undefined ? detail.new_balance : (detail.balance !== undefined ? detail.balance : null);
+          let actionLabel = log.action;
+
+          if (isBalanceAdj || (oldBal !== null && newBal !== null)) {
+            actionLabel = 'Penyesuaian Saldo';
+          } else if (isCustomerUpdate) {
+            actionLabel = 'Pembaruan Data Pelanggan';
+          }
+
           adjustments.push({
             id: log.id,
             date_time: log.date_time,
-            action: log.action,
-            user_name: user ? user.full_name : log.user_id,
-            old_balance: detail.old_balance !== undefined ? detail.old_balance : null,
-            new_balance: detail.new_balance !== undefined ? detail.new_balance : (detail.balance !== undefined ? detail.balance : null),
-            reason: detail.reason || detail.note || ''
+            action: actionLabel,
+            user_name: user ? user.full_name : (log.user_id || 'Admin'),
+            old_balance: oldBal,
+            new_balance: newBal,
+            reason: detail.reason || detail.note || (isBalanceAdj ? 'Penyesuaian saldo hutang' : 'Pembaruan profil / data pelanggan')
           });
         }
       } catch (e) {}
     });
 
-    // Jika ada saldo hutang berjalan namun belum ada catatan audit log spesifik, sertakan informasi saldo awal
-    if (customerBalance > 0 && adjustments.length === 0) {
+    // Jika ada saldo hutang awal atau belum ada log penyesuaian saldo, tambahkan entri saldo awal
+    if (customerBalance > 0 && !adjustments.some(a => a.action === 'Penyesuaian Saldo' || a.action === 'SALDO_AWAL')) {
       adjustments.push({
         id: `ADJ-INIT-${customerId}`,
         date_time: 'Saldo Awal Sistem',
-        action: 'SALDO_AWAL',
+        action: 'Saldo Awal Terdaftar',
         user_name: 'Admin / Sistem',
         old_balance: 0,
         new_balance: customerBalance,
-        reason: 'Pencatatan saldo hutang awal pelanggan dari database'
+        reason: 'Pencatatan saldo hutang awal pelanggan di database'
       });
     }
 

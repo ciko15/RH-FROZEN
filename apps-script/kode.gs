@@ -858,7 +858,7 @@ function createSalesTx(payload) {
     const ymd = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'yyyyMMdd');
 
     const previous_balance = parseFloat(customer.balance || 0);
-    const total_due = subtotal + previous_balance;
+    const total_due = subtotal; // Murni total belanja transaksi ini
 
     let finalPaid = parseFloat(paid_amount || 0);
     if (pay_method === 'Tempo') {
@@ -868,10 +868,11 @@ function createSalesTx(payload) {
       if (finalPaid > total_due) return { ok: false, error: 'OVERPAID', message: 'Pembayaran melebihi total tagihan' };
     }
 
-    const remaining = total_due - finalPaid;
+    const remaining = total_due - finalPaid; // Hutang murni dari transaksi baru ini
+    const newCustomerBalance = previous_balance + remaining; // Saldo hutang pelanggan = hutang lama + sisa hutang transaksi ini
     const credit_limit = parseFloat(customer.credit_limit || 0);
-    if (credit_limit > 0 && remaining > credit_limit && !approved_by) {
-      return { ok: false, error: 'CREDIT_LIMIT_EXCEEDED', message: `Sisa tagihan Rp ${remaining.toLocaleString('id-ID')} melebihi batas kredit` };
+    if (credit_limit > 0 && newCustomerBalance > credit_limit && !approved_by) {
+      return { ok: false, error: 'CREDIT_LIMIT_EXCEEDED', message: `Total hutang pelanggan Rp ${newCustomerBalance.toLocaleString('id-ID')} melebihi batas kredit` };
     }
 
     const termDays = parseInt(customer.term_days, 10) || 14;
@@ -930,7 +931,7 @@ function createSalesTx(payload) {
       }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
     }
 
-    customer.balance = remaining;
+    customer.balance = newCustomerBalance;
     updateSheetRow('Customers', customer._rowIndex, customer, ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active']);
 
     writeAuditLog(user_id, 'CREATE_SALES_TX', { invoice_no: invoiceNo, invoice_id: invoiceId, total_due, remaining });
@@ -1643,4 +1644,69 @@ function installTriggers() {
     .create();
 
   Logger.log('Trigger harian dailyBackup berhasil dipasang untuk pukul 01:00 WIB');
+}
+
+/**
+ * Fungsi Penyesuaian Data Lama (Jalankan 1x dari Apps Script Editor jika diperlukan)
+ * Merapikan kolom total_due dan remaining pada faktur lama agar tidak mencampur hutang sebelumnya.
+ */
+function fixOldInvoicesDueAndRemaining() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Invoices');
+    if (!sheet) return 'Sheet Invoices tidak ditemukan';
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return 'Tidak ada data invoice';
+
+    const headers = data[0];
+    const colTotalDue = headers.indexOf('total_due');
+    const colRemaining = headers.indexOf('remaining');
+    const colSubtotal = headers.indexOf('subtotal');
+    const colPaid = headers.indexOf('paid_amount');
+    const colPayMethod = headers.indexOf('pay_method');
+    const colInvoiceNo = headers.indexOf('invoice_no');
+
+    if (colTotalDue === -1 || colRemaining === -1 || colSubtotal === -1) {
+      return 'Header kolom tidak lengkap di sheet Invoices';
+    }
+
+    let updatedCount = 0;
+    const logs = [];
+
+    for (let r = 1; r < data.length; r++) {
+      const row = data[r];
+      const invNo = row[colInvoiceNo];
+      const subtotal = parseFloat(row[colSubtotal] || 0);
+      const paid = parseFloat(row[colPaid] || 0);
+      const method = String(row[colPayMethod] || 'Tunai');
+
+      const oldDue = parseFloat(row[colTotalDue] || 0);
+      const oldRem = parseFloat(row[colRemaining] || 0);
+
+      // Hitung nilai murni transaksi ini
+      const newDue = subtotal;
+      let newRem = 0;
+      if (method === 'Tempo') {
+        newRem = Math.max(0, subtotal - paid);
+      } else {
+        newRem = Math.max(0, subtotal - paid);
+      }
+
+      if (oldDue !== newDue || oldRem !== newRem) {
+        sheet.getRange(r + 1, colTotalDue + 1).setValue(newDue);
+        sheet.getRange(r + 1, colRemaining + 1).setValue(newRem);
+        updatedCount++;
+        logs.push(`${invNo}: due (${oldDue} -> ${newDue}), rem (${oldRem} -> ${newRem})`);
+      }
+    }
+
+    Logger.log(`Selesai! ${updatedCount} baris invoice berhasil disesuaikan.`);
+    Logger.log(logs.join('\n'));
+    return `Berhasil memperbarui ${updatedCount} transaksi lama.`;
+  } finally {
+    lock.releaseLock();
+  }
 }

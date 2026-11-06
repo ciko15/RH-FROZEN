@@ -65,25 +65,21 @@
           <td class="font-bold">Total belanja</td>
           <td class="text-right font-bold">{{ formatNumber(invoice.total_qty) }}</td>
           <td></td>
-          <td class="text-right font-bold">{{ formatRp(invoice.subtotal) }}</td>
+          <td class="text-right font-bold">{{ formatRp(grossTotal) }}</td>
         </tr>
       </tbody>
     </table>
 
     <div class="divider"></div>
 
-    <!-- Ringkasan Bon & Pembayaran Sesuai Contoh Gambar -->
+    <!-- Ringkasan Transaksi & Pembayaran -->
     <div class="summary-list">
-      <div class="sum-row">
-        <span class="sum-lbl">Bon sebelumnya</span>
-        <span class="sum-val font-bold">{{ formatRp(invoice.previous_balance) }}</span>
-      </div>
       <div class="sum-row" v-if="invoice.discount_total > 0">
         <span class="sum-lbl text-danger font-bold">Diskon / Potongan</span>
         <span class="sum-val font-bold text-danger">- {{ formatRp(invoice.discount_total) }}</span>
       </div>
       <div class="sum-row">
-        <span class="sum-lbl">Total tagihan awal</span>
+        <span class="sum-lbl">Total tagihan transaksi</span>
         <span class="sum-val font-bold">{{ formatRp(invoice.total_due) }}</span>
       </div>
 
@@ -142,10 +138,13 @@
 
     <!-- Sisa Kekurangan / Hutang Angka Besar -->
     <div class="balance-card">
-      <span class="bal-lbl">Sisa kekurangan / hutang:</span>
+      <span class="bal-lbl">Sisa kekurangan / hutang transaksi ini:</span>
       <span class="bal-val" :class="isLunas ? 'text-success' : 'text-danger'">
-        {{ formatRp(invoice.remaining) }}
+        {{ formatRp(pureRemaining) }}
       </span>
+      <small v-if="isLunas" class="text-success font-bold" style="font-size: 11px; margin-top: 4px; display: block;">
+        ✓ Transaksi Lunas
+      </small>
       <small v-if="invoice.total_returned_amount > 0 && Number(invoice.paid_amount) < Number(invoice.total_due)" class="text-muted" style="font-size: 11px; margin-top: 4px; display: block;">
         * Otomatis terpotong retur barang senilai {{ formatRp(invoice.total_returned_amount) }} (tidak ada uang kas keluar).
       </small>
@@ -226,8 +225,38 @@ const canEdit = computed(() => {
   return true;
 });
 
+const grossTotal = computed(() => {
+  if (props.invoice.items && props.invoice.items.length > 0) {
+    return props.invoice.items.reduce((sum, it) => sum + (Number(it.qty || 0) * Number(it.price || 0)), 0);
+  }
+  const sub = parseFloat(props.invoice.subtotal || 0);
+  const disc = parseFloat(props.invoice.discount_total || 0);
+  return sub + disc;
+});
+
+const pureInvoiceDue = computed(() => {
+  const sub = parseFloat(props.invoice.subtotal || 0);
+  if (sub > 0) return sub;
+  return Math.max(0, parseFloat(props.invoice.total_due || 0) - parseFloat(props.invoice.previous_balance || 0));
+});
+
 const isLunas = computed(() => {
-  return parseFloat(props.invoice.remaining || 0) <= 0;
+  // Jika remaining <= 0 langsung lunas
+  const rem = parseFloat(props.invoice.remaining || 0);
+  if (rem <= 0) return true;
+  // Jika paid_amount sudah mencakup total belanja barang faktur ini
+  const paid = parseFloat(props.invoice.paid_amount || 0);
+  if (paid >= pureInvoiceDue.value && pureInvoiceDue.value > 0) return true;
+  return false;
+});
+
+const pureRemaining = computed(() => {
+  if (isLunas.value) return 0;
+  const rem = parseFloat(props.invoice.remaining || 0);
+  const pureDue = pureInvoiceDue.value;
+  const paid = parseFloat(props.invoice.paid_amount || 0);
+  const calculatedRemaining = Math.max(0, pureDue - paid);
+  return Math.min(rem, calculatedRemaining);
 });
 
 const printClass = computed(() => {

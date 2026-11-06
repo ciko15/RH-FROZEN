@@ -40,28 +40,19 @@ export default async function handler(req, res) {
         customers = customers.filter(c => !c.branch_id || c.branch_id === authUser.branch_id);
       }
 
-      // ISOLASI SALES: Sales melihat pelanggan miliknya (berdasarkan sales_id, kecocokan cabang, atau order)
+      // ISOLASI SALES: Kunci mati ke sales pembuat (sales_id === authUser.id)
+      // Sales HANYA bisa melihat pelanggan yang memang ditugaskan/dibuat oleh dirinya sendiri,
+      // kecuali admin mengubah sales_id pelanggan tersebut ke sales lain.
       if (authUser.role === 'sales') {
         customers = customers.filter(c => {
-          // 1. Jika sales_id cocok langsung dengan authUser.id atau username sales
+          // Hanya izinkan jika sales_id secara spesifik adalah akun sales ini
           if (c.sales_id && (
-            c.sales_id === authUser.id || 
-            c.sales_id.toLowerCase().includes(authUser.username.toLowerCase()) ||
-            (authUser.branch_id && c.sales_id.toUpperCase().includes(authUser.branch_id.replace('BR-', '')))
+            c.sales_id === authUser.id ||
+            c.sales_id.toLowerCase() === authUser.username.toLowerCase()
           )) {
             return true;
           }
-          // 2. Jika sales_id cocok dengan cabang sales atau jika sales_id kosong di cabang yang sama
-          if (!c.sales_id && c.branch_id && c.branch_id === authUser.branch_id) {
-            return true;
-          }
-          // 3. Jika customer di cabang yang sama (agar pelanggan baru yang dibuat admin di cabang sales ini langsung terlihat)
-          if (c.branch_id && authUser.branch_id && c.branch_id === authUser.branch_id) {
-            return true;
-          }
-          // 4. Fallback jika pernah dipesan oleh sales ini
-          const hasOrderFromThisSales = orders.some(o => o.customer_id === c.id && o.sales_id === authUser.id);
-          return hasOrderFromThisSales;
+          return false;
         });
       }
 
@@ -97,7 +88,10 @@ export default async function handler(req, res) {
       requireRole(authUser, ['admin', 'manajer', 'sales']);
       const data = validateBody(customerSchema, req.body);
 
-      const branchId = data.branch_id || authUser.branch_id || 'BR-KERTEK';
+      // Kunci mati: Jika role sales, branch_id WAJIB sesuai cabang sales, dan sales_id WAJIB ID sales itu sendiri
+      const branchId = authUser.role === 'sales'
+        ? (authUser.branch_id || 'BR-WONOSOBO')
+        : (data.branch_id || authUser.branch_id || 'BR-KERTEK');
       const salesId = authUser.role === 'sales' ? authUser.id : (data.sales_id || authUser.id);
       const newId = crypto.randomUUID();
 

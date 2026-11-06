@@ -16,21 +16,16 @@ export default async function handler(req, res) {
     }
     customers = customers.filter(c => String(c.active).toUpperCase() === 'TRUE');
 
-    // ISOLASI SALES: Sales hanya dapat memilih pelanggannya sendiri
+    // ISOLASI SALES: Sales hanya dapat memilih pelanggannya sendiri (kunci mati ke sales_id)
     if (authUser.role === 'sales') {
       customers = customers.filter(c => {
         if (c.sales_id && (
           c.sales_id === authUser.id || 
-          c.sales_id.toLowerCase().includes(authUser.username.toLowerCase()) ||
-          (authUser.branch_id && c.sales_id.toUpperCase().includes(authUser.branch_id.replace('BR-', '')))
+          c.sales_id.toLowerCase() === authUser.username.toLowerCase()
         )) {
           return true;
         }
-        if (!c.sales_id && c.branch_id && c.branch_id === authUser.branch_id) {
-          return true;
-        }
-        const hasOrder = orders.some(o => o.customer_id === c.id && o.sales_id === authUser.id);
-        return hasOrder;
+        return false;
       });
     }
 

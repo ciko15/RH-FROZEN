@@ -303,9 +303,9 @@ export default async function handler(req, res) {
         }
       }
 
-      // Hitung Total Tagihan & Sisa Hutang
+      // Hitung Total Tagihan & Sisa Hutang (Murni transaksi baru, tidak menjumlahkan hutang sebelumnya)
       const prevBal = parseFloat(invoice.previous_balance || 0);
-      const newTotalDue = newSubtotal + prevBal;
+      const newTotalDue = newSubtotal;
 
       const newPayMethod = data.pay_method !== undefined ? data.pay_method : (invoice.pay_method || 'Tunai');
       let newPaid = data.paid_amount !== undefined ? parseFloat(data.paid_amount) : parseFloat(invoice.paid_amount || 0);
