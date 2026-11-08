@@ -79,9 +79,21 @@
         <span class="sum-val font-bold text-danger">- {{ formatRp(invoice.discount_total) }}</span>
       </div>
       <div class="sum-row">
-        <span class="sum-lbl">Total tagihan transaksi</span>
+        <span class="sum-lbl">Total tagihan belanja</span>
         <span class="sum-val font-bold">{{ formatRp(invoice.total_due) }}</span>
       </div>
+
+      <!-- Informasi Bon / Hutang Sebelumnya jika ada -->
+      <template v-if="hasPreviousBalance">
+        <div class="sum-row text-danger font-bold" style="background: rgba(239, 68, 68, 0.05); padding: 4px 6px; border-radius: 4px; margin: 3px 0;">
+          <span class="sum-lbl text-danger">Bon / Hutang Sebelumnya</span>
+          <span class="sum-val text-danger">+ {{ formatRp(invoice.previous_balance) }}</span>
+        </div>
+        <div class="sum-row font-bold" style="border-top: 1px dashed #cbd5e1; padding-top: 4px;">
+          <span class="sum-lbl">Total Keseluruhan (Termasuk Bon)</span>
+          <span class="sum-val text-primary">{{ formatRp(grandTotalWithOldDebt) }}</span>
+        </div>
+      </template>
 
       <!-- Keterangan Penyesuaian Retur Barang & Daftar Produk Reject -->
       <div v-if="invoice.total_returned_amount > 0 || (invoice.reject_items && invoice.reject_items.length > 0)" class="return-adj-box">
@@ -138,16 +150,29 @@
 
     <!-- Sisa Kekurangan / Hutang Angka Besar -->
     <div class="balance-card">
-      <span class="bal-lbl">Sisa kekurangan / hutang transaksi ini:</span>
+      <span class="bal-lbl">Sisa tagihan belanja transaksi ini:</span>
       <span class="bal-val" :class="isLunas ? 'text-success' : 'text-danger'">
         {{ formatRp(pureRemaining) }}
       </span>
       <small v-if="isLunas" class="text-success font-bold" style="font-size: 11px; margin-top: 4px; display: block;">
-        ✓ Transaksi Lunas
+        ✓ Belanja Transaksi Ini Lunas
       </small>
       <small v-if="invoice.total_returned_amount > 0 && Number(invoice.paid_amount) < Number(invoice.total_due)" class="text-muted" style="font-size: 11px; margin-top: 4px; display: block;">
         * Otomatis terpotong retur barang senilai {{ formatRp(invoice.total_returned_amount) }} (tidak ada uang kas keluar).
       </small>
+
+      <!-- Tampilan Total Sisa Saldo Hutang Pelanggan jika ada bon lama -->
+      <div v-if="hasPreviousBalance" style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(0,0,0,0.12);">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700;">
+          <span style="color: #64748b;">Total Sisa Hutang Keseluruhan:</span>
+          <span :class="remainingTotalCustomerDebt > 0 ? 'text-danger' : 'text-success'" style="font-size: 14px;">
+            {{ formatRp(remainingTotalCustomerDebt) }}
+          </span>
+        </div>
+        <small style="font-size: 10.5px; color: #64748b; display: block; margin-top: 2px;">
+          {{ remainingTotalCustomerDebt > 0 ? '* Termasuk sisa bon lama & transaksi baru' : '✓ Semua kewajiban hutang telah lunas' }}
+        </small>
+      </div>
     </div>
 
     <div class="meta-info">
@@ -238,6 +263,27 @@ const pureInvoiceDue = computed(() => {
   const sub = parseFloat(props.invoice.subtotal || 0);
   if (sub > 0) return sub;
   return Math.max(0, parseFloat(props.invoice.total_due || 0) - parseFloat(props.invoice.previous_balance || 0));
+});
+
+const prevBalanceVal = computed(() => {
+  return Math.max(0, parseFloat(props.invoice.previous_balance || 0));
+});
+
+const hasPreviousBalance = computed(() => {
+  return prevBalanceVal.value > 0;
+});
+
+const grandTotalWithOldDebt = computed(() => {
+  return (parseFloat(props.invoice.adjusted_total_due || props.invoice.total_due || 0)) + prevBalanceVal.value;
+});
+
+const remainingTotalCustomerDebt = computed(() => {
+  if (props.invoice.customer_current_balance !== undefined && props.invoice.customer_current_balance !== null) {
+    return Math.max(0, parseFloat(props.invoice.customer_current_balance || 0));
+  }
+  const totalBill = grandTotalWithOldDebt.value;
+  const paid = parseFloat(props.invoice.paid_amount || 0);
+  return Math.max(0, totalBill - paid);
 });
 
 const isLunas = computed(() => {
@@ -393,7 +439,15 @@ function handleWhatsApp() {
     itemDetails = '\n\n*Rincian Barang:*\n' + inv.items.map(it => `• ${it.name} (${it.qty}x) = ${formatRp(it.line_total)}`).join('\n');
   }
 
-  const text = `Halo Yth. *${inv.customer_name}*,\nBerikut rincian struk tagihan dari *RH Frozen Food*:\n\n*No Invoice:* ${inv.invoice_no}\n*Tanggal:* ${inv.invoice_date || '-'}${itemDetails}\n\n*Total Tagihan:* ${formatRp(inv.total_due)}\n*Total Pembayaran:* ${formatRp(inv.paid_amount)}\n*Status:* ${statusStr}\n\nTerima kasih atas kerja sama Anda.`;
+  let text = `Halo Yth. *${inv.customer_name}*,\nBerikut rincian struk tagihan dari *RH Frozen Food*:\n\n*No Invoice:* ${inv.invoice_no}\n*Tanggal:* ${inv.invoice_date || '-'}${itemDetails}\n\n*Tagihan Belanja:* ${formatRp(inv.total_due)}`;
+  if (hasPreviousBalance.value) {
+    text += `\n*Bon Sebelumnya:* ${formatRp(inv.previous_balance)}\n*Total Keseluruhan:* ${formatRp(grandTotalWithOldDebt.value)}`;
+  }
+  text += `\n*Total Pembayaran:* ${formatRp(inv.paid_amount)}\n*Status Belanja:* ${statusStr}`;
+  if (hasPreviousBalance.value) {
+    text += `\n*Total Sisa Hutang:* ${formatRp(remainingTotalCustomerDebt.value)}`;
+  }
+  text += `\n\nTerima kasih atas kerja sama Anda.`;
   
   let phone = String(inv.customer_phone || '').replace(/\D/g, '');
   if (phone.startsWith('0')) {

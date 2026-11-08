@@ -97,6 +97,7 @@ export default async function handler(req, res) {
       invoice_time: invoice.invoice_time || invoice.tx_time || '',
       customer_phone: customer ? customer.phone : '',
       customer_address: customer ? customer.address : (invoice.customer_address || ''),
+      customer_current_balance: customer ? parseFloat(customer.balance || 0) : 0,
       has_return: enrichedReturns.length > 0,
       returns: enrichedReturns,
       reject_items: rejectItemsSummary,

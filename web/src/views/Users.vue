@@ -6,7 +6,7 @@
         <span class="subtext">Kelola akun Admin dan Tim Sales</span>
       </div>
       <button class="btn-add-primary" @click="showAddModal = true">
-        <Icon name="plus" size="16" /> + Tambah User
+        <Icon name="plus" size="16" /> Tambah User
       </button>
     </div>
 
@@ -171,6 +171,10 @@
           </div>
 
           <div class="action-buttons">
+            <button class="btn-action btn-edit-user" @click="openEditModal(selectedUser)">
+              <Icon name="edit" size="14" /> Edit Data Pengguna
+            </button>
+
             <button class="btn-action btn-reset" @click="handleResetPassword">
               <Icon name="key" size="13" /> Reset Password
             </button>
@@ -181,6 +185,64 @@
               @click="toggleUserActive"
             >
               {{ selectedUser.active ? '⛔ Nonaktifkan Akun' : '✓ Aktifkan Akun' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Edit User (Khusus Admin) -->
+    <div v-if="showEditModal" class="sheet-overlay" @click.self="showEditModal = false">
+      <div class="sheet-content">
+        <div class="sheet-head">
+          <h3>Edit Data Pengguna</h3>
+          <button class="sheet-close" @click="showEditModal = false"><Icon name="x" size="18" /></button>
+        </div>
+
+        <div class="sheet-body">
+          <div class="form-group">
+            <label>Nama Lengkap *</label>
+            <input v-model="editUser.full_name" type="text" placeholder="Nama lengkap..." required />
+          </div>
+
+          <div class="form-group">
+            <label>Username * (Huruf kecil, angka, underscore)</label>
+            <input v-model="editUser.username" type="text" placeholder="username..." required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Peran (Role) *</label>
+              <select v-model="editUser.role">
+                <option value="sales">Sales</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            <div class="form-group" v-if="editUser.role !== 'admin'">
+              <label>Cabang *</label>
+              <select v-model="editUser.branch_id">
+                <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Ganti Password Baru (Opsional)</label>
+            <input v-model="editUser.password" type="text" placeholder="Kosongkan jika tidak ingin ganti password" />
+            <small style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+              * Minimal 8 karakter kombinasi huruf & angka jika ingin mengubah password.
+            </small>
+          </div>
+
+          <div class="modal-footer-btns">
+            <button class="btn-cancel" @click="showEditModal = false">Batal</button>
+            <button
+              class="btn-save"
+              @click="submitUpdateUser"
+              :disabled="editLoading || !editUser.username || !editUser.full_name"
+            >
+              {{ editLoading ? 'Menyimpan...' : 'Simpan Perubahan' }}
             </button>
           </div>
         </div>
@@ -212,6 +274,18 @@ const pageSize = ref(10);
 const showAddModal = ref(false);
 const createLoading = ref(false);
 const newUser = ref({
+  username: '',
+  full_name: '',
+  role: 'sales',
+  branch_id: '',
+  password: ''
+});
+
+// State Edit User (Khusus Admin)
+const showEditModal = ref(false);
+const editLoading = ref(false);
+const editUser = ref({
+  id: '',
   username: '',
   full_name: '',
   role: 'sales',
@@ -324,6 +398,78 @@ async function submitCreateUser() {
 
 function openUserDetail(u) {
   selectedUser.value = u;
+}
+
+function openEditModal(u) {
+  editUser.value = {
+    id: u.id,
+    username: u.username || '',
+    full_name: u.full_name || '',
+    role: u.role || 'sales',
+    branch_id: u.branch_id || (branches.value[0]?.id || ''),
+    password: ''
+  };
+  selectedUser.value = null; // Tutup bottom sheet detail
+  showEditModal.value = true;
+}
+
+async function submitUpdateUser() {
+  if (!editUser.value.username || !editUser.value.full_name) {
+    appStore.showToast('Nama lengkap dan username wajib diisi', 'warning');
+    return;
+  }
+
+  const targetId = editUser.value.id;
+  const userIdx = users.value.findIndex(u => u.id === targetId);
+  if (userIdx === -1) return;
+
+  const prevUser = { ...users.value[userIdx] };
+  const branchObj = branches.value.find(b => b.id === editUser.value.branch_id);
+
+  // Optimistic update
+  users.value[userIdx] = {
+    ...users.value[userIdx],
+    username: editUser.value.username.trim().toLowerCase(),
+    full_name: editUser.value.full_name.trim(),
+    role: editUser.value.role,
+    branch_id: editUser.value.role === 'admin' ? '' : editUser.value.branch_id,
+    branch_name: editUser.value.role === 'admin' ? 'Semua Cabang' : (branchObj ? branchObj.name : '-')
+  };
+
+  showEditModal.value = false;
+  appStore.showToast(`Data @${editUser.value.username} berhasil diperbarui!`, 'success');
+  appStore.startSync();
+
+  const payload = {
+    id: targetId,
+    username: editUser.value.username.trim().toLowerCase(),
+    full_name: editUser.value.full_name.trim(),
+    role: editUser.value.role,
+    branch_id: editUser.value.role === 'admin' ? '' : editUser.value.branch_id,
+    password: editUser.value.password ? editUser.value.password.trim() : undefined
+  };
+
+  apiFetch('/api/users', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }).then(res => {
+    if (res?.data) {
+      const idx = users.value.findIndex(u => u.id === targetId);
+      if (idx !== -1) {
+        users.value[idx] = { ...users.value[idx], ...res.data };
+      }
+    }
+  }).catch(err => {
+    console.error('[UPDATE USER ERROR]', err);
+    appStore.showToast('Gagal memperbarui pengguna: ' + err.message, 'error');
+    // Rollback
+    const idx = users.value.findIndex(u => u.id === targetId);
+    if (idx !== -1) {
+      users.value[idx] = prevUser;
+    }
+  }).finally(() => {
+    appStore.finishSync();
+  });
 }
 
 async function toggleUserActive() {
@@ -700,6 +846,34 @@ onMounted(() => {
   color: white;
 }
 .btn-reset { background: var(--primary); }
+.btn-edit-user {
+  background: #f59e0b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.btn-edit-user:hover { background: #d97706; }
 .btn-deactivate { background: var(--danger); }
 .btn-activate { background: var(--success); }
+
+.modal-footer-btns {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.btn-cancel {
+  background: var(--bg-hover, #e2e8f0);
+  color: var(--text-main, #334155);
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0 16px;
+  flex: 1;
+}
+.modal-footer-btns .btn-save {
+  margin-top: 0;
+  flex: 2;
+}
 </style>

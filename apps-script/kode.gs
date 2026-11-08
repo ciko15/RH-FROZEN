@@ -859,17 +859,22 @@ function createSalesTx(payload) {
 
     const previous_balance = parseFloat(customer.balance || 0);
     const total_due = subtotal; // Murni total belanja transaksi ini
+    const maxPayable = total_due + Math.max(0, previous_balance);
 
     let finalPaid = parseFloat(paid_amount || 0);
     if (pay_method === 'Tempo') {
       finalPaid = 0;
     } else {
       if (finalPaid < 0) finalPaid = 0;
-      if (finalPaid > total_due) return { ok: false, error: 'OVERPAID', message: 'Pembayaran melebihi total tagihan' };
+      if (finalPaid > maxPayable) return { ok: false, error: 'OVERPAID', message: `Pembayaran melebihi total tagihan belanja + bon sebelumnya (Maksimal Rp ${maxPayable.toLocaleString('id-ID')})` };
     }
 
-    const remaining = total_due - finalPaid; // Hutang murni dari transaksi baru ini
-    const newCustomerBalance = previous_balance + remaining; // Saldo hutang pelanggan = hutang lama + sisa hutang transaksi ini
+    // Porsi pembayaran: utamakan melunasi belanja transaksi baru ini
+    const paidForCurrentInvoice = Math.min(finalPaid, total_due);
+    const paidForOldDebt = Math.max(0, finalPaid - total_due); // Kelebihan bayar otomatis memotong bon/hutang sebelumnya
+
+    const remaining = total_due - paidForCurrentInvoice; // Hutang sisa transaksi baru ini (0 jika lunas)
+    const newCustomerBalance = Math.max(0, (previous_balance - paidForOldDebt) + remaining);
     const credit_limit = parseFloat(customer.credit_limit || 0);
     if (credit_limit > 0 && newCustomerBalance > credit_limit && !approved_by) {
       return { ok: false, error: 'CREDIT_LIMIT_EXCEEDED', message: `Total hutang pelanggan Rp ${newCustomerBalance.toLocaleString('id-ID')} melebihi batas kredit` };
@@ -923,18 +928,26 @@ function createSalesTx(payload) {
       }, ['id', 'invoice_id', 'product_id', 'name', 'qty', 'price', 'discount', 'cost_price']);
     }
 
-    if (finalPaid > 0) {
+    if (paidForCurrentInvoice > 0) {
       appendSheetRow('Payments', {
         id: Utilities.getUuid(), payment_date: txDate, payment_time: txTime,
         customer_id: customer.id, invoice_id: invoiceId, type: 'Invoice',
-        amount: finalPaid, method: pay_method, note: `Bayar ${invoiceNo}`, created_by: user_id
+        amount: paidForCurrentInvoice, method: pay_method, note: `Bayar ${invoiceNo}`, created_by: user_id
+      }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
+    }
+
+    if (paidForOldDebt > 0) {
+      appendSheetRow('Payments', {
+        id: Utilities.getUuid(), payment_date: txDate, payment_time: txTime,
+        customer_id: customer.id, invoice_id: '', type: 'Piutang',
+        amount: paidForOldDebt, method: pay_method, note: `Cicil/Pelunasan Bon Lama via ${invoiceNo}`, created_by: user_id
       }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
     }
 
     customer.balance = newCustomerBalance;
     updateSheetRow('Customers', customer._rowIndex, customer, ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active']);
 
-    writeAuditLog(user_id, 'CREATE_SALES_TX', { invoice_no: invoiceNo, invoice_id: invoiceId, total_due, remaining });
+    writeAuditLog(user_id, 'CREATE_SALES_TX', { invoice_no: invoiceNo, invoice_id: invoiceId, total_due, remaining, paid_for_old_debt: paidForOldDebt });
     return { ok: true, data: newInvoice, message: 'Transaksi kasir berhasil disimpan' };
   } finally {
     lock.releaseLock();

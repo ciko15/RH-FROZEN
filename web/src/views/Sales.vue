@@ -298,12 +298,20 @@
             <strong>Rp {{ fmt(cartNetSubtotal) }}</strong>
           </div>
           <div class="sum-row total">
-            <span>Total Transaksi Ini</span>
+            <span>Total Belanja Ini</span>
             <strong class="total-big">Rp {{ fmt(totalDue) }}</strong>
           </div>
-          <div class="sum-row" v-if="selectedCustomer && Number(selectedCustomer?.balance) > 0" style="padding: 6px 10px; background: rgba(239, 68, 68, 0.08); border-radius: 6px; margin: 6px 0;">
-            <span class="text-danger font-bold" style="font-size: 13px;">Hutang Bon Sebelumnya</span>
-            <span class="text-danger font-bold" style="font-size: 13px;">Rp {{ fmt(selectedCustomer?.balance || 0) }}</span>
+          <div class="sum-row" v-if="customerOldDebt > 0" style="padding: 6px 10px; background: rgba(239, 68, 68, 0.08); border-radius: 6px; margin: 6px 0;">
+            <div style="display: flex; flex-direction: column;">
+              <span class="text-danger font-bold" style="font-size: 13px;">Hutang Bon Sebelumnya</span>
+              <small style="color: #64748b; font-size: 11px;">Bisa sekalian dibayarkan / dicicil pada transaksi ini</small>
+            </div>
+            <span class="text-danger font-bold" style="font-size: 13px;">Rp {{ fmt(customerOldDebt) }}</span>
+          </div>
+
+          <div class="sum-row" v-if="customerOldDebt > 0" style="padding: 6px 10px; background: rgba(37, 99, 235, 0.08); border-radius: 6px; margin: 6px 0;">
+            <span class="text-primary font-bold" style="font-size: 13px;">Total Keseluruhan (Termasuk Bon)</span>
+            <strong class="text-primary font-bold" style="font-size: 14px;">Rp {{ fmt(grandTotalWithDebt) }}</strong>
           </div>
 
           <div class="pay-form">
@@ -318,7 +326,10 @@
             <div class="form-group" v-if="payMethod !== 'Tempo'">
               <div class="flex-between">
                 <label>Nominal Diterima</label>
-                <button type="button" class="btn-quick" @click="paidAmount = totalDue">Uang Pas</button>
+                <div style="display: flex; gap: 6px;">
+                  <button type="button" class="btn-quick" @click="paidAmount = totalDue" title="Bayar belanja transaksi ini saja">Uang Pas Belanja</button>
+                  <button v-if="customerOldDebt > 0" type="button" class="btn-quick" style="background: rgba(37, 99, 235, 0.12); color: var(--primary);" @click="paidAmount = grandTotalWithDebt" title="Lunasi belanja hari ini sekaligus semua bon lama">Lunas Semua (+Bon)</button>
+                </div>
               </div>
               <input
                 type="text"
@@ -328,7 +339,15 @@
                 placeholder="0"
                 class="currency-input"
               />
-              <div v-if="paidAmount > totalDue" class="change-info">
+              <div v-if="paidAmount > totalDue && customerOldDebt > 0" class="change-info" style="color: #2563eb; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.2);">
+                <span>Alokasi pelunasan bon lama:</span>
+                <strong>Rp {{ fmt(Math.min(paidAmount - totalDue, customerOldDebt)) }}</strong>
+              </div>
+              <div v-if="paidAmount > grandTotalWithDebt" class="change-info">
+                <span>Kembalian:</span>
+                <strong>Rp {{ fmt(paidAmount - grandTotalWithDebt) }}</strong>
+              </div>
+              <div v-else-if="paidAmount > totalDue && customerOldDebt === 0" class="change-info">
                 <span>Kembalian:</span>
                 <strong>Rp {{ fmt(paidAmount - totalDue) }}</strong>
               </div>
@@ -845,6 +864,8 @@ const cartTotalDiscount = computed(() => cart.value.reduce((s, it) => s + (Numbe
 const cartNetSubtotal = computed(() => Math.max(0, cartGrossSubtotal.value - cartTotalDiscount.value));
 const cartTotal = computed(() => cartNetSubtotal.value);
 const totalDue = computed(() => cartNetSubtotal.value);
+const customerOldDebt = computed(() => Math.max(0, parseFloat(selectedCustomer.value?.balance || 0)));
+const grandTotalWithDebt = computed(() => totalDue.value + customerOldDebt.value);
 
 function fmt(n) {
   return formatNumber(n);
@@ -1132,11 +1153,25 @@ async function submitTransaction() {
   const clientKey = crypto.randomUUID();
 
   try {
+    const rawPaid = payMethod.value === 'Tempo' ? 0 : (Number(paidAmount.value) || 0);
+    // Maksimum yang dialokasikan ke sistem: totalDue + customerOldDebt
+    const effectivePaid = Math.min(rawPaid, grandTotalWithDebt.value);
+    const paidForOld = Math.max(0, effectivePaid - totalDue.value);
+    const changeAmount = Math.max(0, rawPaid - grandTotalWithDebt.value);
+
+    let noteExtra = '';
+    if (paidForOld > 0) {
+      noteExtra += ` (Termasuk pelunasan bon lama Rp ${fmt(paidForOld)})`;
+    }
+    if (changeAmount > 0) {
+      noteExtra += ` (Kembalian Rp ${fmt(changeAmount)})`;
+    }
+
     const payload = {
       customer_id: selectedCustomerId.value,
       pay_method: payMethod.value,
-      paid_amount: payMethod.value === 'Tempo' ? 0 : Math.min(Number(paidAmount.value) || 0, totalDue.value),
-      note: (txNote.value ? txNote.value + ' ' : '') + (paidAmount.value > totalDue.value ? `(Diterima Rp ${fmt(paidAmount.value)}, Kembalian Rp ${fmt(paidAmount.value - totalDue.value)})` : '').trim(),
+      paid_amount: effectivePaid,
+      note: ((txNote.value ? txNote.value.trim() : '') + noteExtra).trim(),
       items: cart.value.map(it => ({
         product_id: it.product_id,
         name: it.product_name,
