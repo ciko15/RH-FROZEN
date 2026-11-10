@@ -34,7 +34,7 @@
           <label :for="'check-' + it.product_id" class="it-info">
             <span class="it-name">{{ it.name }}</span>
             <small class="it-meta">Terjual: <strong>{{ formatNumber(it.sold_qty) }}</strong> | Harga: Rp {{ formatNumber(it.net_unit_price) }}</small>
-            <small class="it-rem">Maksimal retur: <strong>{{ it.max_returnable }}</strong></small>
+            <small class="it-rem text-muted">Bisa retur melebihi qty terjual</small>
           </label>
 
           <div class="it-qty-stepper">
@@ -48,7 +48,6 @@
               v-model.number="it.return_qty"
               type="number"
               min="0"
-              :max="it.max_returnable"
               inputmode="numeric"
               class="step-input"
               @input="onQtyInput(it)"
@@ -57,7 +56,6 @@
               type="button"
               class="btn-step"
               @click="incrementQty(it)"
-              :disabled="it.return_qty >= it.max_returnable"
             >+</button>
           </div>
         </div>
@@ -254,9 +252,6 @@ function onToggleItem(it) {
 }
 
 function onQtyInput(it) {
-  if (it.return_qty > it.max_returnable) {
-    it.return_qty = it.max_returnable;
-  }
   if (it.return_qty < 0 || isNaN(it.return_qty)) {
     it.return_qty = 0;
   }
@@ -264,10 +259,8 @@ function onQtyInput(it) {
 }
 
 function incrementQty(it) {
-  if (it.return_qty < it.max_returnable) {
-    it.return_qty++;
-    it.selected = true;
-  }
+  it.return_qty = (parseInt(it.return_qty, 10) || 0) + 1;
+  it.selected = true;
 }
 
 function decrementQty(it) {

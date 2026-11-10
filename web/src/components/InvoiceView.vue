@@ -12,8 +12,8 @@
           <h3>{{ invoice.doc_title || 'INVOICE' }}</h3>
           <span class="inv-no">#{{ invoice.invoice_no }}</span>
         </div>
-        <div class="inv-badge" :class="isLunas ? 'badge-lunas' : 'badge-tempo'">
-          {{ invoice.badge_text || (isLunas ? 'LUNAS' : 'BELUM LUNAS') }}
+        <div class="inv-badge" :class="isNegativeRemaining ? 'badge-retur-minus' : (isLunas ? 'badge-lunas' : 'badge-tempo')">
+          {{ invoice.badge_text || (isNegativeRemaining ? 'LEBIH BAYAR / RETUR' : (isLunas ? 'LUNAS' : 'BELUM LUNAS')) }}
         </div>
       </div>
     </div>
@@ -150,14 +150,17 @@
 
     <!-- Sisa Kekurangan / Hutang Angka Besar -->
     <div class="balance-card">
-      <span class="bal-lbl">Sisa tagihan belanja transaksi ini:</span>
-      <span class="bal-val" :class="isLunas ? 'text-success' : 'text-danger'">
-        {{ formatRp(pureRemaining) }}
+      <span class="bal-lbl">{{ isNegativeRemaining ? 'Saldo Pengembalian / Lebih Bayar Retur:' : 'Sisa tagihan belanja transaksi ini:' }}</span>
+      <span class="bal-val" :class="isNegativeRemaining ? 'text-warning' : (isLunas ? 'text-success' : 'text-danger')">
+        {{ isNegativeRemaining ? '- ' + formatRp(Math.abs(invoice.remaining)) : formatRp(pureRemaining) }}
       </span>
-      <small v-if="isLunas" class="text-success font-bold" style="font-size: 11px; margin-top: 4px; display: block;">
+      <small v-if="isNegativeRemaining" class="text-warning font-bold" style="font-size: 11px; margin-top: 4px; display: block;">
+        ↩ Retur Melebihi Belanja (Harus Dikembalikan Kas/Potong Saldo)
+      </small>
+      <small v-else-if="isLunas" class="text-success font-bold" style="font-size: 11px; margin-top: 4px; display: block;">
         ✓ Belanja Transaksi Ini Lunas
       </small>
-      <small v-if="invoice.total_returned_amount > 0 && Number(invoice.paid_amount) < Number(invoice.total_due)" class="text-muted" style="font-size: 11px; margin-top: 4px; display: block;">
+      <small v-if="invoice.total_returned_amount > 0 && Number(invoice.paid_amount) < Number(invoice.total_due) && !isNegativeRemaining" class="text-muted" style="font-size: 11px; margin-top: 4px; display: block;">
         * Otomatis terpotong retur barang senilai {{ formatRp(invoice.total_returned_amount) }} (tidak ada uang kas keluar).
       </small>
 
@@ -282,10 +285,15 @@ const remainingTotalCustomerDebt = computed(() => {
   return Math.max(0, pureRemaining.value + prevBalanceVal.value);
 });
 
+const isNegativeRemaining = computed(() => {
+  return parseFloat(props.invoice.remaining || 0) < 0;
+});
+
 const isLunas = computed(() => {
+  if (isNegativeRemaining.value) return false;
   // Jika remaining <= 0 langsung lunas
   const rem = parseFloat(props.invoice.remaining || 0);
-  if (rem <= 0) return true;
+  if (rem === 0) return true;
   // Jika paid_amount sudah mencakup total belanja barang faktur ini
   const paid = parseFloat(props.invoice.paid_amount || 0);
   if (paid >= pureInvoiceDue.value && pureInvoiceDue.value > 0) return true;
@@ -508,6 +516,11 @@ function handleWhatsApp() {
 .badge-tempo {
   background: #fee2e2;
   color: #b91c1c;
+}
+.badge-retur-minus {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fcd34d;
 }
 .info-grid {
   display: flex;

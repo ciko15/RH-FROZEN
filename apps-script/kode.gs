@@ -1027,14 +1027,15 @@ function createReturn(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const { invoice_id, items, reason, user_id, branch_id } = payload;
+    const { invoice_id, return_action, items, reason, user_id, branch_id } = payload;
+    const isDirectSalesReturn = !invoice_id || return_action === 'RETURN_STOCK' || return_action === 'DAMAGED_STOCK';
 
-    // Cari invoice untuk validasi
+    // Cari invoice untuk validasi jika ada
     const invoices = getSheetData('Invoices');
-    const invoice = invoices.find(inv => inv.id === invoice_id);
-    if (!invoice) return { ok: false, error: 'NOT_FOUND', message: 'Invoice tidak ditemukan' };
+    const invoice = invoice_id ? invoices.find(inv => inv.id === invoice_id) : null;
+    if (!isDirectSalesReturn && !invoice) return { ok: false, error: 'NOT_FOUND', message: 'Invoice tidak ditemukan' };
 
-    const invoiceItems = getSheetData('InvoiceItems').filter(ii => ii.invoice_id === invoice_id);
+    const invoiceItems = invoice_id ? getSheetData('InvoiceItems').filter(ii => ii.invoice_id === invoice_id) : [];
     const salesStock = getSheetData('SalesStock');
 
     const validatedReturnItems = [];
@@ -1042,13 +1043,22 @@ function createReturn(payload) {
 
     for (const item of items) {
       const invItem = invoiceItems.find(ii => ii.product_id === item.product_id);
-      if (!invItem) return { ok: false, error: 'ITEM_NOT_IN_INVOICE', message: `Barang ID ${item.product_id} tidak ada dalam transaksi ini` };
+      let itemName = invItem ? invItem.name : 'Produk';
+      let itemPrice = invItem ? parseFloat(invItem.price) : 0;
+      if (!invItem) {
+        const products = getSheetData('Products');
+        const prod = products.find(p => p.id === item.product_id);
+        if (prod) {
+          itemName = prod.name;
+          itemPrice = parseFloat(prod.price) || 0;
+        }
+      }
       const qty = parseInt(item.qty, 10);
-      if (isNaN(qty) || qty <= 0 || qty > parseInt(invItem.qty, 10)) {
-        return { ok: false, error: 'INVALID_RETURN_QTY', message: `Qty retur ${invItem.name} tidak valid (maks: ${invItem.qty})` };
+      if (isNaN(qty) || qty <= 0) {
+        return { ok: false, error: 'INVALID_RETURN_QTY', message: `Qty retur ${itemName} harus lebih dari 0` };
       }
       total_qty += qty;
-      validatedReturnItems.push({ product_id: item.product_id, name: invItem.name, qty, price: parseFloat(invItem.price) });
+      validatedReturnItems.push({ product_id: item.product_id, name: itemName, qty, price: itemPrice });
     }
 
     const now = new Date();
@@ -1059,11 +1069,15 @@ function createReturn(payload) {
     const returnId = Utilities.getUuid();
     const returnNo = getNextCounter(`RET-${branch_id || invoice.branch_id}-${ymd}`);
 
-    // Simpan Returns dengan status Menunggu — stok BELUM berubah
+    const retType = isDirectSalesReturn ? (return_action || 'RETURN_STOCK') : 'SALES_TO_ADMIN';
+    const finalSalesId = isDirectSalesReturn ? user_id : (invoice ? invoice.sales_id : user_id);
+    const finalBranchId = branch_id || (invoice ? invoice.branch_id : '');
+
+    // Simpan Returns dengan status Menunggu — stok BELUM berubah sampai admin menyetujui
     const newReturn = {
-      id: returnId, return_no: returnNo, type: 'SALES_TO_ADMIN',
-      ref_id: invoice_id, sales_id: invoice.sales_id,
-      branch_id: branch_id || invoice.branch_id,
+      id: returnId, return_no: returnNo, type: retType,
+      ref_id: invoice_id || '', sales_id: finalSalesId,
+      branch_id: finalBranchId,
       date: dateStr, reason: reason || '', status: 'Menunggu',
       approved_by: '', approved_at: '', total_qty, user_id
     };
@@ -1076,39 +1090,45 @@ function createReturn(payload) {
       }, ['id', 'return_id', 'product_id', 'name', 'qty', 'price']);
     }
 
-    // Penyesuaian Finansial: Potong sisa bon / piutang, dan kembalikan kas tunai (uang keluar)
+    let debtDeduction = 0;
+    let cashRefund = 0;
     const totalAmount = validatedReturnItems.reduce((s, it) => s + (it.qty * it.price), 0);
-    const invoiceRemaining = parseFloat(invoice.remaining || 0);
-    const debtDeduction = Math.min(Math.max(0, invoiceRemaining), totalAmount);
-    const cashRefund = Math.max(0, totalAmount - debtDeduction);
 
-    if (debtDeduction > 0) {
-      invoice.remaining = Math.max(0, invoiceRemaining - debtDeduction);
+    // Penyesuaian Finansial HANYA jika retur terkait transaksi pelanggan (bukan pengembalian internal stok sales)
+    if (!isDirectSalesReturn && invoice) {
+      const invoiceRemaining = parseFloat(invoice.remaining || 0);
+      debtDeduction = invoiceRemaining > 0 ? Math.min(invoiceRemaining, totalAmount) : 0;
+      cashRefund = Math.max(0, totalAmount - debtDeduction);
+
+      // Update remaining invoice (bisa bernilai minus jika retur melebihi sisa invoice)
+      invoice.remaining = invoiceRemaining - totalAmount;
       updateSheetRow('Invoices', invoice._rowIndex, invoice, ['id', 'invoice_no', 'tx_date', 'tx_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by']);
 
-      const customers = getSheetData('Customers');
-      const customer = customers.find(c => c.id === invoice.customer_id);
-      if (customer) {
-        const curBal = parseFloat(customer.balance || 0);
-        customer.balance = Math.max(0, curBal - debtDeduction);
-        updateSheetRow('Customers', customer._rowIndex, customer, ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active']);
+      if (debtDeduction > 0) {
+        const customers = getSheetData('Customers');
+        const customer = customers.find(c => c.id === invoice.customer_id);
+        if (customer) {
+          const curBal = parseFloat(customer.balance || 0);
+          customer.balance = Math.max(0, curBal - debtDeduction);
+          updateSheetRow('Customers', customer._rowIndex, customer, ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active']);
+        }
       }
-    }
 
-    if (cashRefund > 0) {
-      const timeStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'HH:mm:ss');
-      appendSheetRow('Payments', {
-        id: Utilities.getUuid(),
-        payment_date: dateStr,
-        payment_time: timeStr,
-        customer_id: invoice.customer_id,
-        invoice_id: invoice.id,
-        type: 'Pengeluaran',
-        amount: cashRefund,
-        method: 'Tunai',
-        note: `Retur #${returnNo} (${invoice.invoice_no})`,
-        created_by: user_id
-      }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
+      if (cashRefund > 0) {
+        const timeStr = Utilities.formatDate(now, APP_CONFIG.TIMEZONE, 'HH:mm:ss');
+        appendSheetRow('Payments', {
+          id: Utilities.getUuid(),
+          payment_date: dateStr,
+          payment_time: timeStr,
+          customer_id: invoice.customer_id,
+          invoice_id: invoice.id,
+          type: 'Pengeluaran',
+          amount: cashRefund,
+          method: 'Tunai',
+          note: `Retur #${returnNo} (${invoice.invoice_no})`,
+          created_by: user_id
+        }, ['id', 'payment_date', 'payment_time', 'customer_id', 'invoice_id', 'type', 'amount', 'method', 'note', 'created_by']);
+      }
     }
 
     writeAuditLog(user_id, 'CREATE_RETURN_REQUEST', { return_no: returnNo, invoice_id, total_qty, total_amount: totalAmount, debt_deduction: debtDeduction, cash_refund: cashRefund });
@@ -1139,6 +1159,8 @@ function approveReturn(payload) {
     const nowStr = Utilities.formatDate(new Date(), APP_CONFIG.TIMEZONE, APP_CONFIG.DATETIME_FORMAT);
     const salesId = ret.sales_id;
 
+    const isDamaged = ret.type === 'DAMAGED_STOCK' || (ret.reason && ret.reason.toLowerCase().includes('rusak'));
+
     for (const ri of returnItems) {
       const qty = parseInt(ri.qty, 10) || 0;
 
@@ -1151,22 +1173,24 @@ function approveReturn(payload) {
         updateSheetRow('SalesStock', ssRow._rowIndex, ssRow, salesStockHeaders);
         appendSheetRow('StockMovements', {
           id: Utilities.getUuid(), date_time: nowStr, product_id: ri.product_id,
-          change: -qty, reason: 'Retur ke Admin', ref: ret.return_no,
+          change: -qty, reason: isDamaged ? 'Barang Rusak (Disetujui Admin)' : 'Kembalikan Stok ke Admin', ref: ret.return_no,
           balance_after: newSalesStock, user_id: salesId, stock_type: 'SALES'
         }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
       }
 
-      // 2. Tambah stok admin/gudang
-      const prod = products.find(p => p.id === ri.product_id);
-      if (prod) {
-        const newAdminStock = (parseInt(prod.stock, 10) || 0) + qty;
-        prod.stock = newAdminStock;
-        updateSheetRow('Products', prod._rowIndex, prod, prodHeaders);
-        appendSheetRow('StockMovements', {
-          id: Utilities.getUuid(), date_time: nowStr, product_id: ri.product_id,
-          change: qty, reason: 'Terima Retur', ref: ret.return_no,
-          balance_after: newAdminStock, user_id: admin_id, stock_type: 'ADMIN'
-        }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+      // 2. Jika BUKAN barang rusak (kembalikan stok layak jual), tambahkan stok admin/gudang
+      if (!isDamaged) {
+        const prod = products.find(p => p.id === ri.product_id);
+        if (prod) {
+          const newAdminStock = (parseInt(prod.stock, 10) || 0) + qty;
+          prod.stock = newAdminStock;
+          updateSheetRow('Products', prod._rowIndex, prod, prodHeaders);
+          appendSheetRow('StockMovements', {
+            id: Utilities.getUuid(), date_time: nowStr, product_id: ri.product_id,
+            change: qty, reason: 'Terima Pengembalian Stok Sales', ref: ret.return_no,
+            balance_after: newAdminStock, user_id: admin_id, stock_type: 'ADMIN'
+          }, ['id', 'date_time', 'product_id', 'change', 'reason', 'ref', 'balance_after', 'user_id', 'stock_type']);
+        }
       }
     }
 

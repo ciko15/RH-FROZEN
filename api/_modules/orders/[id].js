@@ -16,7 +16,7 @@ const editOrderSchema = z.object({
   })).min(1, 'Minimal 1 barang').optional()
 });
 
-const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at'];
+const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by'];
 const CUST_HEADERS = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
 const ORDER_ITEM_HEADERS = ['id', 'order_id', 'product_id', 'qty', 'qty_shipped', 'price'];
 

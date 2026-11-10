@@ -181,7 +181,7 @@ export default async function handler(req, res) {
 
       order.status = 'Dikirim';
       order.updated_at = new Date().toISOString();
-      const headers = ['id', 'order_no', 'order_date', 'order_time', 'customer_id', 'sales_id', 'branch_id', 'status', 'note', 'invoice_id', 'client_key', 'created_at', 'updated_at'];
+      const headers = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by'];
       await updateRow('Orders', order._rowIndex, order, headers);
       clearCache();
       updated = order;

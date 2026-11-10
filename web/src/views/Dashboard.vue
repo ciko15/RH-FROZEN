@@ -98,7 +98,7 @@
 
     <!-- TAMPILAN KHUSUS SALES (Sesuai SOP Aplikasi.docx: order pelanggan -> barang dikirim -> laporan penjualan) -->
     <div v-else class="sales-dashboard-flow">
-      <!-- 3 Alur Kerja Utama Sales -->
+      <!-- 4 Alur Kerja Utama Sales -->
       <div class="flow-steps-grid">
         <router-link to="/orders/new" class="flow-step-card primary-step">
           <div class="step-num">1</div>
@@ -118,8 +118,17 @@
           <span class="step-arrow"><Icon name="truck" size="16" /></span>
         </router-link>
 
+        <router-link to="/stock-returns?tab=create" class="flow-step-card return-step">
+          <div class="step-num orange-num">3</div>
+          <div class="step-content">
+            <span class="step-title">Kembalikan Stok</span>
+            <span class="step-desc">Kembalikan stok / barang rusak ke admin</span>
+          </div>
+          <span class="step-arrow"><Icon name="package" size="16" /></span>
+        </router-link>
+
         <router-link to="/reports" class="flow-step-card">
-          <div class="step-num">3</div>
+          <div class="step-num">4</div>
           <div class="step-content">
             <span class="step-title">Laporan Penjualan</span>
             <span class="step-desc">Omset, komisi, dan target bulanan</span>
@@ -505,9 +514,14 @@ onMounted(() => {
   gap: 10px;
   margin-bottom: 14px;
 }
-@media (min-width: 768px) {
+@media (min-width: 640px) {
   .flow-steps-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 1024px) {
+  .flow-steps-grid {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 .flow-step-card {
@@ -529,6 +543,9 @@ onMounted(() => {
 .primary-step {
   border-left: 4px solid var(--primary);
 }
+.return-step {
+  border-left: 4px solid #f59e0b;
+}
 .step-num {
   width: 28px;
   height: 28px;
@@ -541,6 +558,9 @@ onMounted(() => {
   font-weight: 700;
   font-size: 13px;
   flex-shrink: 0;
+}
+.orange-num {
+  background: #f59e0b;
 }
 .step-content {
   flex: 1;

@@ -53,11 +53,30 @@ export default async function handler(req, res) {
     const branches = tabs.Branches || [];
     const allItems = tabs.OrderItems || [];
 
-    let orders = (tabs.Orders || []).filter(o => o.type === 'STOCK_REQUEST');
+    let orders = (tabs.Orders || []).filter(o => !o.type || o.type === 'STOCK_REQUEST' || (o.order_no && o.order_no.startsWith('STK-')));
+    orders = orders.map(o => {
+      let sales_id = o.sales_id || '';
+      let branch_id = o.branch_id || '';
+      let status = o.status || '';
+
+      if (!sales_id && branch_id && (branch_id.startsWith('USR-SLS-') || users.some(u => u.id === branch_id))) {
+        sales_id = branch_id;
+        branch_id = status.startsWith('BR-') ? status : '';
+        status = o.note && (o.note === 'Dibatalkan' || o.note === 'Dikirim' || o.note === 'Proses') ? o.note : 'Dibatalkan';
+      }
+
+      return {
+        ...o,
+        sales_id,
+        branch_id,
+        status: status || o.status || 'Proses'
+      };
+    });
+
     if (authUser.role === 'sales') {
       orders = orders.filter(o => o.sales_id === authUser.id);
     } else if (authUser.role !== 'admin' && authUser.branch_id) {
-      orders = orders.filter(o => o.branch_id === authUser.branch_id);
+      orders = orders.filter(o => !o.branch_id || o.branch_id === authUser.branch_id);
     }
 
     // Index item per order

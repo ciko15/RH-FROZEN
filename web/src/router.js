@@ -17,6 +17,7 @@ import History from './views/History.vue';
 import More from './views/More.vue';
 import ReturnNew from './views/ReturnNew.vue';
 import Returns from './views/Returns.vue';
+import StockReturns from './views/StockReturns.vue';
 import Purchases from './views/Purchases.vue';
 import StockOpname from './views/StockOpname.vue';
 import Targets from './views/Targets.vue';
@@ -67,6 +68,12 @@ const routes = [
     path: '/returns',
     name: 'Returns',
     component: Returns,
+    meta: { showBack: true }
+  },
+  {
+    path: '/stock-returns',
+    name: 'StockReturns',
+    component: StockReturns,
     meta: { showBack: true }
   },
   {

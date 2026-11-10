@@ -64,7 +64,7 @@ const server = http.createServer(async (req, res) => {
   console.log(`[API DEV] ${req.method} ${pathname}`);
 
   try {
-    const { default: handler } = await import('../api/index.js');
+    const { default: handler } = await import(`../api/index.js?t=${Date.now()}`);
     return await handler(req, res);
   } catch (err) {
     console.error('[SERVER ERROR]', err);

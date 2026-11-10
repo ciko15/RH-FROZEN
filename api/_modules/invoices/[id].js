@@ -87,9 +87,9 @@ export default async function handler(req, res) {
 
     const rawTotalDue = parseFloat(invoice.total_due || 0);
     const rawPaid = parseFloat(invoice.paid_amount || 0);
-    const adjustedTotalDue = Math.max(0, rawTotalDue - totalReturnedAmount);
-    const adjustedRemaining = Math.max(0, adjustedTotalDue - rawPaid);
-    const cashRefund = Math.max(0, rawPaid - adjustedTotalDue);
+    const adjustedTotalDue = rawTotalDue - totalReturnedAmount;
+    const adjustedRemaining = adjustedTotalDue - rawPaid;
+    const cashRefund = Math.max(0, -adjustedRemaining);
 
     const fullInvoice = {
       ...invoice,

@@ -18,10 +18,10 @@
       <span class="label">Kasir</span>
     </router-link>
 
-    <!-- 4. Retur Barang (Approval Admin) -->
-    <router-link to="/returns" class="nav-item" active-class="active">
+    <!-- 4. Kembalikan Stok / Retur Barang -->
+    <router-link :to="isSales ? '/stock-returns' : '/returns'" class="nav-item" active-class="active">
       <Icon name="package" size="20" class="nav-svg" />
-      <span class="label">Retur</span>
+      <span class="label">{{ isSales ? 'Kembalikan' : 'Retur Barang' }}</span>
     </router-link>
 
     <!-- 6. Lainnya -->

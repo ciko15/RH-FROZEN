@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { z } from 'zod';
 import { authenticate } from '../_lib/auth.js';
 import { requireRole } from '../_lib/rbac.js';
@@ -10,13 +11,14 @@ import { handleApiError, ApiError } from '../_lib/errors.js';
 
 const returnItemSchema = z.object({
   product_id: z.string().min(1, 'ID barang wajib diisi'),
-  qty: z.number().int().positive('Qty retur harus bilangan bulat positif')
+  qty: z.number().int().positive('Qty harus bilangan bulat positif')
 });
 
 const createReturnSchema = z.object({
-  invoice_id: z.string().min(1, 'ID transaksi wajib disertakan'),
-  reason: z.string().min(1, 'Alasan retur wajib diisi').trim(),
-  items: z.array(returnItemSchema).min(1, 'Minimal retur 1 barang')
+  invoice_id: z.string().optional().default(''),
+  return_action: z.enum(['RETURN_STOCK', 'DAMAGED_STOCK', 'CUSTOMER_RETURN']).optional().default('RETURN_STOCK'),
+  reason: z.string().min(1, 'Alasan wajib diisi').trim(),
+  items: z.array(returnItemSchema).min(1, 'Minimal pilih 1 barang')
 });
 
 export default async function handler(req, res) {
@@ -86,9 +88,112 @@ export default async function handler(req, res) {
 
       const data = validateBody(createReturnSchema, req.body);
 
-      // Ambil data terkait untuk validasi ketat sebelum memproses
-      const tabs = await getTabsBatch(['Products', 'Invoices', 'InvoiceItems', 'Customers', 'Returns', 'ReturnItems', 'SalesStock']);
+      // Muat tabs yang diperlukan untuk validasi dan pemrosesan POST
+      const tabs = await getTabsBatch(['Products', 'SalesStock', 'Invoices', 'InvoiceItems', 'Returns', 'ReturnItems', 'Customers']);
       const products = tabs.Products || [];
+
+      // =========================================================================
+      // CABANG 1: PENGEMBALIAN BARANG SALES KE ADMIN (STOK KEMBALI / BARANG RUSAK)
+      // =========================================================================
+      if (data.return_action === 'RETURN_STOCK' || data.return_action === 'DAMAGED_STOCK' || !data.invoice_id) {
+        const returnAction = data.return_action || 'RETURN_STOCK';
+        const salesId = authUser.id;
+        const salesStocks = tabs.SalesStock || [];
+
+        // Validasi: Qty yang dikembalikan tidak boleh melebihi stok yang saat ini dipegang sales
+        for (const item of data.items) {
+          const prod = products.find(p => p.id === item.product_id);
+          if (!prod) throw new ApiError(400, 'BAD_REQUEST', `Produk ID ${item.product_id} tidak ditemukan`);
+          const ss = salesStocks.find(s => s.sales_id === salesId && s.product_id === item.product_id);
+          const currentSalesStock = parseInt(ss?.stock || 0, 10);
+          if (item.qty > currentSalesStock) {
+            throw new ApiError(400, 'INSUFFICIENT_STOCK', `Stok ${prod.name} di sales (${currentSalesStock} pcs) tidak cukup untuk mengembalikan ${item.qty} pcs`);
+          }
+        }
+
+        const enrichedItems = data.items.map(it => {
+          const prod = products.find(p => p.id === it.product_id);
+          return {
+            product_id: it.product_id,
+            name: prod ? prod.name : 'Produk',
+            qty: it.qty,
+            price: parseFloat(prod?.cost_price || prod?.price || 0),
+            line_total: it.qty * parseFloat(prod?.cost_price || prod?.price || 0)
+          };
+        });
+
+        // Panggil GAS untuk simpan record Returns (type: RETURN_STOCK atau DAMAGED_STOCK)
+        let result;
+        try {
+          result = await callGas('createReturn', {
+            invoice_id: '',
+            return_action: returnAction,
+            items: data.items,
+            reason: data.reason,
+            user_id: salesId,
+            branch_id: authUser.branch_id || ''
+          });
+        } catch (gasErr) {
+          console.warn('[GAS RETURN FALLBACK] Simpan langsung ke sheet:', gasErr.message);
+          const returnId = crypto.randomUUID();
+          const today = new Date();
+          const dateStr = today.toISOString().substring(0, 10);
+          const ymd = dateStr.replace(/-/g, '');
+          const returnNo = `RET-${authUser.branch_id || 'BR'}-${ymd}-${String(Math.floor(Math.random() * 900) + 100)}`;
+          const totalQty = data.items.reduce((s, it) => s + it.qty, 0);
+
+          const returnRow = {
+            id: returnId,
+            return_no: returnNo,
+            type: returnAction,
+            ref_id: '',
+            sales_id: salesId,
+            branch_id: authUser.branch_id || '',
+            date: dateStr,
+            reason: data.reason,
+            status: 'Menunggu',
+            approved_by: '',
+            approved_at: '',
+            total_qty: totalQty,
+            user_id: salesId
+          };
+          await appendRow('Returns', returnRow, ['id', 'return_no', 'type', 'ref_id', 'sales_id', 'branch_id', 'date', 'reason', 'status', 'approved_by', 'approved_at', 'total_qty', 'user_id']);
+
+          for (const it of enrichedItems) {
+            await appendRow('ReturnItems', {
+              id: crypto.randomUUID(),
+              return_id: returnId,
+              product_id: it.product_id,
+              name: it.name,
+              qty: it.qty,
+              price: it.price
+            }, ['id', 'return_id', 'product_id', 'name', 'qty', 'price']);
+          }
+          result = returnRow;
+        }
+
+        try { clearCache(); } catch (e) {}
+
+        const resPayload = {
+          ok: true,
+          data: {
+            ...(result || {}),
+            return_action: returnAction,
+            reason: data.reason,
+            items: enrichedItems,
+            total_qty: data.items.reduce((s, it) => s + it.qty, 0)
+          },
+          message: returnAction === 'DAMAGED_STOCK'
+            ? 'Pengajuan barang rusak berhasil dikirim, menunggu persetujuan admin'
+            : 'Pengajuan pengembalian stok ke admin berhasil dikirim, menunggu persetujuan admin'
+        };
+        if (idempotencyKey) await saveIdempotency(idempotencyKey, resPayload);
+        return res.status(201).json(resPayload);
+      }
+
+      // =========================================================================
+      // CABANG 2: RETUR DARI PELANGGAN ATAS FAKTUR TERTENTU (CUSTOMER RETURN)
+      // =========================================================================
       const invoice = (tabs.Invoices || []).find(inv => inv.id === data.invoice_id);
       if (!invoice) throw new ApiError(404, 'NOT_FOUND', 'Invoice tidak ditemukan');
 
@@ -96,27 +201,17 @@ export default async function handler(req, res) {
       const prevReturns = (tabs.Returns || []).filter(r => (r.invoice_id === invoice.id || r.ref_id === invoice.id) && r.status !== 'Ditolak');
       const allReturnItems = tabs.ReturnItems || [];
 
-      // Validasi: Retur tidak boleh melebihi qty yang dibeli di invoice itu (setelah dikurangi retur sebelumnya)
+      // Validasi item: Pastikan barang ada di invoice atau produk master
       for (const item of data.items) {
         const invItem = invoiceItems.find(ii => ii.product_id === item.product_id);
-        if (!invItem) throw new ApiError(400, 'BAD_REQUEST', `Barang tidak ada dalam invoice ini`);
-        const origQty = parseInt(invItem.qty, 10) || 0;
-
-        // Hitung total retur sebelumnya untuk barang ini
-        const alreadyReturnedQty = prevReturns.reduce((sum, pr) => {
-          const prItems = allReturnItems.filter(ri => ri.return_id === pr.id && ri.product_id === item.product_id);
-          return sum + prItems.reduce((s, pi) => s + (parseInt(pi.qty, 10) || 0), 0);
-        }, 0);
-
-        const maxAllowed = origQty - alreadyReturnedQty;
-        if (item.qty > maxAllowed) {
-          throw new ApiError(400, 'INVALID_RETURN_QTY', `Qty retur ${invItem.name} (${item.qty} pcs) melebihi sisa pembelian yang bisa diretur (maks: ${maxAllowed} pcs)`);
-        }
+        const prod = products.find(p => p.id === item.product_id);
+        if (!invItem && !prod) throw new ApiError(400, 'BAD_REQUEST', `Barang tidak ditemukan`);
       }
 
       // Panggil GAS untuk simpan record Returns dan ReturnItems
       const result = await callGas('createReturn', {
         invoice_id: data.invoice_id,
+        return_action: 'CUSTOMER_RETURN',
         items: data.items,
         reason: data.reason,
         user_id: authUser.id,
@@ -140,7 +235,7 @@ export default async function handler(req, res) {
       });
       const totalAmount = enrichedItems.reduce((s, it) => s + it.line_total, 0);
 
-      // Rumus Finansial Satu Sumber Kebenaran:
+      // Rumus Finansial:
       // Hitung akumulasi nilai retur invoice ini termasuk retur yang baru diajukan
       const prevReturnVal = prevReturns.reduce((sum, pr) => {
         const prItems = allReturnItems.filter(ri => ri.return_id === pr.id);
@@ -150,11 +245,12 @@ export default async function handler(req, res) {
 
       const invSubtotal = parseFloat(invoice.subtotal || invoice.total_due || 0);
       const invPaid = parseFloat(invoice.paid_amount || 0);
-      const newNetDue = Math.max(0, invSubtotal - totalInvReturnAmount);
-      const newRemaining = Math.max(0, newNetDue - invPaid);
-      const newTotalRefund = Math.max(0, invPaid - newNetDue);
+      // Sisa tagihan baru: bisa bernilai minus jika total retur melebihi tagihan/pembayaran
+      const newNetDue = invSubtotal - totalInvReturnAmount;
+      const newRemaining = newNetDue - invPaid;
+      const newTotalRefund = totalAmount;
 
-      // Update remaining pada invoice
+      // Update remaining pada invoice (bisa negatif)
       if (invoice._rowIndex) {
         invoice.remaining = newRemaining;
         const INVOICE_HEADERS = ['id', 'invoice_no', 'tx_date', 'tx_time', 'due_date', 'customer_id', 'customer_name', 'customer_address', 'branch_id', 'sales_id', 'total_qty', 'subtotal', 'discount_total', 'previous_balance', 'total_due', 'paid_amount', 'remaining', 'pay_method', 'note', 'approved_by', 'created_by'];
@@ -167,7 +263,7 @@ export default async function handler(req, res) {
 
       // Update saldo piutang customer jika ada pemotongan piutang
       const oldRemaining = parseFloat(invoice.remaining || 0);
-      const debtDeduction = Math.min(Math.max(0, oldRemaining), totalAmount);
+      const debtDeduction = oldRemaining > 0 ? Math.min(oldRemaining, totalAmount) : 0;
       const cashRefund = Math.max(0, totalAmount - debtDeduction);
 
       if (debtDeduction > 0 && customer && customer._rowIndex) {
@@ -181,7 +277,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // ATURAN STOK SALES (Langkah 4):
+      // ATURAN STOK SALES:
       // Barang yang diretur pelanggan KEMBALI MENJADI STOK SALES pemilik invoice
       const targetSalesId = invoice.sales_id || authUser.id;
       const salesStocks = tabs.SalesStock || [];

@@ -947,6 +947,12 @@ onMounted(load);
   color: var(--text-main);
   background: var(--bg-app);
 }
+.sales-action-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .btn-add {
   display: inline-flex;
   align-items: center;
@@ -967,6 +973,28 @@ onMounted(load);
 }
 .btn-add:hover {
   opacity: 0.95;
+  transform: translateY(-1px);
+}
+.btn-return-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: var(--radius-card, 10px);
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border: 1px solid #fcd34d;
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+.btn-return-shortcut:hover {
+  background: rgba(245, 158, 11, 0.2);
   transform: translateY(-1px);
 }
 .status-tabs {

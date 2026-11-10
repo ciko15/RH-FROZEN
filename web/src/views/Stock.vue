@@ -825,6 +825,18 @@ onMounted(() => {
   border-color: var(--primary, #2563eb);
   box-shadow: 0 2px 8px rgba(37, 99, 235, .25);
 }
+.tab-btn-source.btn-return-action {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+  border-color: #fcd34d;
+}
+.tab-btn-source.btn-return-action:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
 .stock-header {
   display: flex;
   gap: 10px;

@@ -34,16 +34,37 @@ export default async function handler(req, res) {
       const search = (req.query.search || '').toLowerCase().trim();
 
       const tabs = await getTabsBatch(['Orders', 'OrderItems', 'Users', 'Products']);
-      let orders = (tabs.Orders || []).filter(o => o.type === 'STOCK_REQUEST');
+      let orders = (tabs.Orders || []).filter(o => !o.type || o.type === 'STOCK_REQUEST' || (o.order_no && o.order_no.startsWith('STK-')));
       const orderItems = tabs.OrderItems || [];
       const users = tabs.Users || [];
       const products = tabs.Products || [];
+
+      // Normalisasi jika kolom sempat bergeser (misal sales_id kosong tapi ada di branch_id)
+      orders = orders.map(o => {
+        let sales_id = o.sales_id || '';
+        let branch_id = o.branch_id || '';
+        let status = o.status || '';
+
+        // Jika sales_id kosong tapi branch_id terisi kode USR-SLS-* atau UUID sales
+        if (!sales_id && branch_id && (branch_id.startsWith('USR-SLS-') || users.some(u => u.id === branch_id))) {
+          sales_id = branch_id;
+          branch_id = status.startsWith('BR-') ? status : '';
+          status = o.note && (o.note === 'Dibatalkan' || o.note === 'Dikirim' || o.note === 'Proses') ? o.note : 'Dibatalkan';
+        }
+
+        return {
+          ...o,
+          sales_id,
+          branch_id,
+          status: status || o.status || 'Proses'
+        };
+      });
 
       // RBAC: Sales hanya lihat order sendiri
       if (authUser.role === 'sales') {
         orders = orders.filter(o => o.sales_id === authUser.id);
       } else if (authUser.role !== 'admin' && authUser.branch_id) {
-        orders = orders.filter(o => o.branch_id === authUser.branch_id);
+        orders = orders.filter(o => !o.branch_id || o.branch_id === authUser.branch_id);
       }
 
       // Filter status

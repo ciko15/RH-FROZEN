@@ -29,6 +29,14 @@
           <div class="icon-box"><Icon name="stock" size="18" class="nav-svg" /></div>
           <span class="label">Stok Produk</span>
         </router-link>
+        <router-link to="/stock-returns" class="sidebar-link" active-class="active">
+          <div class="icon-box"><Icon name="package" size="18" class="nav-svg" /></div>
+          <span class="label">Kembalikan Stok</span>
+        </router-link>
+        <router-link to="/returns" class="sidebar-link" active-class="active">
+          <div class="icon-box"><Icon name="reports" size="18" class="nav-svg" /></div>
+          <span class="label">Retur Pelanggan</span>
+        </router-link>
         <!-- Menu PO di-hide sementara sesuai permintaan user -->
         <!--
         <router-link to="/purchases" class="sidebar-link" active-class="active" v-if="canManageData">

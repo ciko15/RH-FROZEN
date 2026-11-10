@@ -461,8 +461,8 @@
                   <span v-if="tx.has_return" class="badge badge-retur-flag" title="Ada pengembalian/retur barang">
                     ↩ Ada Retur{{ tx.return_total_qty ? ` (${tx.return_total_qty} pcs)` : '' }}
                   </span>
-                  <span v-if="tx.type === 'Invoice'" class="badge" :class="parseFloat(tx.remaining) <= 0 ? 'badge-lunas' : 'badge-tempo'">
-                    {{ parseFloat(tx.remaining) <= 0 ? 'Lunas' : 'Sisa Rp ' + fmt(tx.remaining) }}
+                  <span v-if="tx.type === 'Invoice'" class="badge" :class="parseFloat(tx.remaining) < 0 ? 'badge-retur-minus' : (parseFloat(tx.remaining) === 0 ? 'badge-lunas' : 'badge-tempo')">
+                    {{ parseFloat(tx.remaining) < 0 ? 'Retur/Lebih: - Rp ' + fmt(Math.abs(tx.remaining)) : (parseFloat(tx.remaining) === 0 ? 'Lunas' : 'Sisa Rp ' + fmt(tx.remaining)) }}
                   </span>
                   <span v-else class="badge badge-lunas">Pembayaran Masuk</span>
                 </div>
@@ -2234,6 +2234,12 @@ onUnmounted(() => {
 .badge-tempo {
   background: rgba(239, 68, 68, 0.15);
   color: #dc2626;
+}
+.badge-retur-minus {
+  background: rgba(245, 158, 11, 0.2);
+  color: #b45309;
+  border: 1px solid #fcd34d;
+  font-weight: 700;
 }
 .badges-row {
   display: flex;

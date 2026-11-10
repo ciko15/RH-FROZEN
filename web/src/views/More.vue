@@ -27,14 +27,29 @@
         <span class="m-arrow">›</span>
       </router-link>
 
-      <router-link to="/returns" class="menu-item card">
+      <!-- Menu Kembalikan Stok ke Admin (Mandiri) -->
+      <router-link to="/stock-returns" class="menu-item card">
         <div class="m-left">
-          <div class="m-icon-box icon-stock">
+          <div class="m-icon-box icon-stock" style="background: rgba(245, 158, 11, 0.15); color: #d97706;">
             <Icon name="package" size="20" />
           </div>
           <div class="m-text">
-            <span class="m-title">Retur Barang</span>
-            <span class="m-sub">Pengajuan & persetujuan retur ke admin</span>
+            <span class="m-title">Kembalikan Stok ke Admin</span>
+            <span class="m-sub">Pengembalian stok layak jual / barang rusak ke gudang admin</span>
+          </div>
+        </div>
+        <span class="m-arrow">›</span>
+      </router-link>
+
+      <!-- Menu Retur Penjualan Pelanggan -->
+      <router-link to="/returns" class="menu-item card">
+        <div class="m-left">
+          <div class="m-icon-box icon-reports">
+            <Icon name="sales" size="20" />
+          </div>
+          <div class="m-text">
+            <span class="m-title">Retur Penjualan Pelanggan</span>
+            <span class="m-sub">Retur faktur & penyesuaian nota penjualan pelanggan</span>
           </div>
         </div>
         <span class="m-arrow">›</span>

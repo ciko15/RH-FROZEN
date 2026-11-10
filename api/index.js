@@ -208,15 +208,21 @@ export default async function handler(req, res) {
     }
 
     // 11. Returns
-    const returnActionMatch = pathname.match(/^\/api\/returns\/([^/]+)\/(approve|reject)$/);
+    const returnActionMatch = pathname.match(/^\/api\/returns\/([^/]+)\/(approve|reject|cancel)$/);
     if (returnActionMatch) {
       req.query.id = returnActionMatch[1];
       req.query.action = returnActionMatch[2];
-      const { default: h } = await import('./_modules/returns/action.js');
+      const { default: h } = await import(`./_modules/returns/action.js?t=${Date.now()}`);
+      return await h(req, res);
+    }
+    const returnItemDetailMatch = pathname.match(/^\/api\/returns\/([^/]+)$/);
+    if (returnItemDetailMatch) {
+      req.query.id = returnItemDetailMatch[1];
+      const { default: h } = await import(`./_modules/returns/[id].js?t=${Date.now()}`);
       return await h(req, res);
     }
     if (pathname === '/api/returns') {
-      const { default: h } = await import('./_modules/returns/index.js');
+      const { default: h } = await import(`./_modules/returns/index.js?t=${Date.now()}`);
       return await h(req, res);
     }
 
