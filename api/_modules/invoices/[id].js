@@ -365,6 +365,7 @@ export default async function handler(req, res) {
       }
 
       // Update Invoice baris utama
+      const prevBalVal = parseFloat(invoice.previous_balance || 0);
       const updatedInvoice = {
         ...invoice,
         customer_id: targetCustomerId,
@@ -373,6 +374,7 @@ export default async function handler(req, res) {
         subtotal: newSubtotal,
         total_qty: newTotalQty,
         discount_total: newDiscountTotal,
+        previous_balance: prevBalVal,
         total_due: newTotalDue,
         paid_amount: newPaid,
         remaining: newRemaining,
@@ -394,7 +396,11 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         ok: true,
-        data: updatedInvoice,
+        data: {
+          ...updatedInvoice,
+          items: newItems,
+          customer_current_balance: parseFloat(targetCust.balance || 0)
+        },
         message: 'Transaksi invoice berhasil diperbarui'
       });
     }

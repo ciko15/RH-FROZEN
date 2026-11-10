@@ -278,12 +278,8 @@ const grandTotalWithOldDebt = computed(() => {
 });
 
 const remainingTotalCustomerDebt = computed(() => {
-  if (props.invoice.customer_current_balance !== undefined && props.invoice.customer_current_balance !== null) {
-    return Math.max(0, parseFloat(props.invoice.customer_current_balance || 0));
-  }
-  const totalBill = grandTotalWithOldDebt.value;
-  const paid = parseFloat(props.invoice.paid_amount || 0);
-  return Math.max(0, totalBill - paid);
+  // Total hutang keseluruhan dari sudut pandang invoice ini = sisa belanja invoice ini + bon sebelumnya
+  return Math.max(0, pureRemaining.value + prevBalanceVal.value);
 });
 
 const isLunas = computed(() => {

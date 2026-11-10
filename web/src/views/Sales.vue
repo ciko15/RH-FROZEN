@@ -864,7 +864,13 @@ const cartTotalDiscount = computed(() => cart.value.reduce((s, it) => s + (Numbe
 const cartNetSubtotal = computed(() => Math.max(0, cartGrossSubtotal.value - cartTotalDiscount.value));
 const cartTotal = computed(() => cartNetSubtotal.value);
 const totalDue = computed(() => cartNetSubtotal.value);
-const customerOldDebt = computed(() => Math.max(0, parseFloat(selectedCustomer.value?.balance || 0)));
+const customerOldDebt = computed(() => {
+  if (editingInvoiceId.value && editingInvoiceOriginal.value) {
+    // Saat edit, ambil bon/hutang sebelumnya yang melekat pada invoice ini
+    return Math.max(0, parseFloat(editingInvoiceOriginal.value.previous_balance || 0));
+  }
+  return Math.max(0, parseFloat(selectedCustomer.value?.balance || 0));
+});
 const grandTotalWithDebt = computed(() => totalDue.value + customerOldDebt.value);
 
 function fmt(n) {
