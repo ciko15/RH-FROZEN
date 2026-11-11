@@ -143,7 +143,7 @@ export default async function handler(req, res) {
     // 1. Total Penjualan Kotor & Penjualan Bersih (Setelah Retur)
     const grossSales = totalGrossSales;
     const totalReturnAmount = totalReturnVal;
-    const netSales = Math.max(0, grossSales - totalReturnAmount);
+    const netSales = grossSales - totalReturnAmount;
 
     // 2. Jumlah Transaksi Faktur (Periode Ini)
     const totalOrdersCount = periodInvoices.length;
@@ -151,7 +151,7 @@ export default async function handler(req, res) {
     // 3. Pembayaran Masuk Bersih (Diterima dikurangi Refund Tunai Retur)
     const totalPaymentsIn = totalCashReceived;
     const totalRefunds = totalCashRefund;
-    const netPayments = Math.max(0, totalPaymentsIn - totalRefunds);
+    const netPayments = totalPaymentsIn - totalRefunds;
 
     // 4. Total Piutang Pelanggan (Saldo Berjalan) & Hutang Periode Ini
     const totalReceivables = customers.reduce((sum, c) => sum + (parseFloat(c.balance) || 0), 0);
@@ -216,10 +216,10 @@ export default async function handler(req, res) {
       // Hitung dari invoice milik sales ini (sumber kebenaran tunggal)
       const userGrossOmset = userInvoices.reduce((sum, inv) => sum + (parseFloat(inv.subtotal || inv.total_due) || 0), 0);
       const userReturnAmount = userInvoices.reduce((sum, inv) => sum + (inv.calculated_return || 0), 0);
-      const userOmsetBersih = Math.max(0, userGrossOmset - userReturnAmount);
+      const userOmsetBersih = userGrossOmset - userReturnAmount;
       const userCashReceived = userInvoices.reduce((sum, inv) => sum + (parseFloat(inv.paid_amount) || 0), 0);
       const userCashRefund = userInvoices.reduce((sum, inv) => sum + (inv.calculated_refund || 0), 0);
-      const userNetCash = Math.max(0, userCashReceived - userCashRefund);
+      const userNetCash = userCashReceived - userCashRefund;
       const userRemainingBon = userInvoices.reduce((sum, inv) => sum + (inv.calculated_remaining || 0), 0);
 
       // Pelunasan bon lama terpisah via Payments (jika ada)
