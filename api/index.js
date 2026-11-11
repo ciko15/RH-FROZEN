@@ -212,17 +212,17 @@ export default async function handler(req, res) {
     if (returnActionMatch) {
       req.query.id = returnActionMatch[1];
       req.query.action = returnActionMatch[2];
-      const { default: h } = await import(`./_modules/returns/action.js?t=${Date.now()}`);
+      const { default: h } = await import('./_modules/returns/action.js');
       return await h(req, res);
     }
     const returnItemDetailMatch = pathname.match(/^\/api\/returns\/([^/]+)$/);
     if (returnItemDetailMatch) {
       req.query.id = returnItemDetailMatch[1];
-      const { default: h } = await import(`./_modules/returns/[id].js?t=${Date.now()}`);
+      const { default: h } = await import('./_modules/returns/[id].js');
       return await h(req, res);
     }
     if (pathname === '/api/returns') {
-      const { default: h } = await import(`./_modules/returns/index.js?t=${Date.now()}`);
+      const { default: h } = await import('./_modules/returns/index.js');
       return await h(req, res);
     }
 
