@@ -292,6 +292,7 @@ async function submitReturn() {
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({
         invoice_id: invoiceId,
+        return_action: 'CUSTOMER_RETURN',
         reason: returnReason.value,
         items: selectedItems
       })

@@ -88,6 +88,12 @@ export default async function handler(req, res) {
 
       const data = validateBody(createReturnSchema, req.body);
 
+      // Tentukan apakah ini retur penjualan pelanggan (CUSTOMER_RETURN) atau pengembalian stok sales ke admin
+      const isCustomerReturn = Boolean(data.invoice_id) || data.return_action === 'CUSTOMER_RETURN';
+      const returnAction = isCustomerReturn
+        ? 'CUSTOMER_RETURN'
+        : (data.return_action || 'RETURN_STOCK');
+
       // Muat tabs yang diperlukan untuk validasi dan pemrosesan POST
       const tabs = await getTabsBatch(['Products', 'SalesStock', 'Invoices', 'InvoiceItems', 'Returns', 'ReturnItems', 'Customers']);
       const products = tabs.Products || [];
@@ -95,12 +101,11 @@ export default async function handler(req, res) {
       // =========================================================================
       // CABANG 1: PENGEMBALIAN BARANG SALES KE ADMIN (STOK KEMBALI / BARANG RUSAK)
       // =========================================================================
-      if (data.return_action === 'RETURN_STOCK' || data.return_action === 'DAMAGED_STOCK' || !data.invoice_id) {
-        const returnAction = data.return_action || 'RETURN_STOCK';
+      if (!isCustomerReturn) {
         const salesId = authUser.id;
         const salesStocks = tabs.SalesStock || [];
 
-        // Validasi: Qty yang dikembalikan tidak boleh melebihi stok yang saat ini dipegang sales
+        // Validasi: Qty yang dikembalikan ke admin tidak boleh melebihi stok yang saat ini dipegang sales
         for (const item of data.items) {
           const prod = products.find(p => p.id === item.product_id);
           if (!prod) throw new ApiError(400, 'BAD_REQUEST', `Produk ID ${item.product_id} tidak ditemukan`);
