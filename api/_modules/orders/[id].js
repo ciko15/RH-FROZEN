@@ -59,8 +59,11 @@ export default async function handler(req, res) {
         const shippedQty = it.qty_shipped !== undefined && it.qty_shipped !== '' && it.qty_shipped !== null
           ? (parseInt(it.qty_shipped, 10) || 0)
           : (order.status === 'Dikirim' ? requestedQty : null);
+        const resolvedName = prod ? prod.name : (it.name || it.product_name || 'Produk');
         return {
           ...it,
+          name: resolvedName,
+          product_name: resolvedName,
           emoji: prod ? prod.emoji : '📦',
           admin_stock: parseInt(prod?.stock || 0, 10),
           qty: requestedQty,

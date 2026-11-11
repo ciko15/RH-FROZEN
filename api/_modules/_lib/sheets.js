@@ -219,6 +219,27 @@ function normalizeTabRows(tabName, rows) {
     });
   }
 
+  if (tabName === 'OrderItems') {
+    // Normalisasi baris OrderItems: pada beberapa baris gviz, kolom name terisi angka qty karena kolom nama produk tidak tersimpan
+    return rows.map(it => {
+      const nameVal = String(it.name || '').trim();
+      const qtyVal = it.qty !== undefined && it.qty !== null ? String(it.qty).trim() : '';
+
+      // Jika qty kosong dan name berisi angka murni, berarti kolom bergeser (name adalah qty)
+      if (qtyVal === '' && nameVal && !isNaN(Number(nameVal))) {
+        const actualQty = parseInt(nameVal, 10) || 0;
+        return {
+          ...it,
+          name: '', // nama produk akan diisi dari master Products
+          qty: actualQty,
+          shortage: parseInt(it.shortage, 10) || 0,
+          qty_shipped: it.qty_shipped !== undefined && it.qty_shipped !== '' && it.qty_shipped !== null ? (parseInt(it.qty_shipped, 10) || 0) : ''
+        };
+      }
+      return it;
+    });
+  }
+
   return rows;
 }
 
