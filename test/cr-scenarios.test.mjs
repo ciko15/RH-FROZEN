@@ -174,3 +174,4 @@ test('Skenario 7: Monitoring stok sales: Diminta, Dikirim, Laku, Sisa Stok', () 
   const sisaStok = shipped - sold;
   assert.equal(sisaStok, 5, 'Sisa stok harus Dikirim - Laku = 5 (bukan dari diminta)');
 });
+

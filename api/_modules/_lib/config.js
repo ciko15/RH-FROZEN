@@ -24,3 +24,4 @@ export const CR_CONFIG = {
   // 7. Nilai default nama pemesan untuk data lama / kosong
   DEFAULT_NAMA_PEMESAN: '-'
 };
+
