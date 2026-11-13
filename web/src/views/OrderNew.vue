@@ -37,24 +37,37 @@
     <div class="card req-card">
       <div class="section-title">Daftar Permintaan ({{ formatNumber(items.length) }})</div>
       <div v-if="items.length === 0" class="empty">Belum ada barang dipilih.</div>
-      <div v-for="(it, idx) in items" :key="it.product_id" class="req-row" :class="{ warn: it.qty > it.stock }">
-        <div class="req-info">
-          <div class="req-name">{{ it.emoji }} {{ it.name }}</div>
-          <small v-if="it.qty > it.stock" class="text-danger">
-            ⚠️ Stok admin kurang {{ formatNumber(it.qty - Math.max(it.stock, 0)) }} — tetap bisa diminta
-          </small>
+      <div v-for="(it, idx) in items" :key="idx" class="req-item-block" :class="{ warn: it.qty > it.stock }">
+        <div class="req-row">
+          <div class="req-info">
+            <div class="req-name">{{ it.emoji }} {{ it.name }}</div>
+            <small v-if="it.qty > it.stock" class="text-danger">
+              ⚠️ Stok admin kurang {{ formatNumber(it.qty - Math.max(it.stock, 0)) }} — tetap bisa diminta
+            </small>
+          </div>
+          <div class="qty-ctrl">
+            <button type="button" @click="dec(idx)">−</button>
+            <input
+              v-model.number="it.qty"
+              type="number"
+              min="1"
+              inputmode="numeric"
+              @focus="$event.target.select()"
+              @click="$event.target.select()"
+            />
+            <button type="button" @click="it.qty++">+</button>
+            <button type="button" class="btn-remove-row" @click="removeRow(idx)" title="Hapus baris">×</button>
+          </div>
         </div>
-        <div class="qty-ctrl">
-          <button type="button" @click="dec(idx)">−</button>
+        <div class="customer-name-row">
+          <label class="customer-label">Nama Pemesan / Catatan <span class="text-danger">*</span></label>
           <input
-            v-model.number="it.qty"
-            type="number"
-            min="1"
-            inputmode="numeric"
-            @focus="$event.target.select()"
-            @click="$event.target.select()"
+            v-model="it.nama_pemesan"
+            type="text"
+            class="input-customer-name"
+            placeholder="Contoh: Bu Sri / Adam / Warung Berkah"
+            required
           />
-          <button type="button" @click="it.qty++">+</button>
         </div>
       </div>
 
@@ -94,16 +107,24 @@ const filteredProducts = computed(() => {
 const totalQty = computed(() => items.value.reduce((s, i) => s + (parseInt(i.qty, 10) || 0), 0));
 
 function qtyOf(id) {
-  return items.value.find(i => i.product_id === id)?.qty || 0;
+  return items.value.filter(i => i.product_id === id).reduce((s, it) => s + (parseInt(it.qty, 10) || 0), 0);
 }
 function inc(p) {
-  const ex = items.value.find(i => i.product_id === p.id);
-  if (ex) ex.qty++;
-  else items.value.push({ product_id: p.id, name: p.name, emoji: p.emoji || '📦', stock: parseInt(p.stock, 10) || 0, qty: 1 });
+  items.value.push({
+    product_id: p.id,
+    name: p.name,
+    emoji: p.emoji || '📦',
+    stock: parseInt(p.stock, 10) || 0,
+    qty: 1,
+    nama_pemesan: ''
+  });
 }
 function dec(idx) {
   if (items.value[idx].qty > 1) items.value[idx].qty--;
   else items.value.splice(idx, 1);
+}
+function removeRow(idx) {
+  items.value.splice(idx, 1);
 }
 
 async function loadProducts() {
@@ -121,6 +142,13 @@ async function loadProducts() {
 async function submit() {
   const valid = items.value.filter(i => i.qty > 0);
   if (!valid.length) return appStore.showToast('Minimal pilih 1 barang', 'warning');
+
+  // Validasi A1: Field Nama Pemesan / Catatan wajib diisi per item
+  const emptyPemesan = valid.find(i => !i.nama_pemesan || !String(i.nama_pemesan).trim());
+  if (emptyPemesan) {
+    return appStore.showToast(`Nama pemesan untuk barang "${emptyPemesan.name}" wajib diisi`, 'warning');
+  }
+
   loading.value = true;
   const clientKey = crypto.randomUUID();
   try {
@@ -130,10 +158,14 @@ async function submit() {
       body: JSON.stringify({
         note: note.value,
         client_key: clientKey,
-        items: valid.map(i => ({ product_id: i.product_id, qty: parseInt(i.qty, 10) }))
+        items: valid.map(i => ({
+          product_id: i.product_id,
+          qty: parseInt(i.qty, 10),
+          nama_pemesan: i.nama_pemesan.trim()
+        }))
       })
     });
-    appStore.showToast('Permintaan barang terkirim ke admin', 'success');
+    appStore.showToast('Pesanan berhasil dicatat & dikirim ke admin', 'success');
     router.push('/orders');
   } catch (err) {
     appStore.showToast(`Gagal mengirim: ${err.message}`, 'error');
@@ -165,12 +197,17 @@ onMounted(loadProducts);
 .prod-stock.danger, .text-danger { color: var(--danger, #ef4444); }
 .prod-badge { position: absolute; top: 6px; right: 6px; background: var(--primary, #2563eb); color: #fff; border-radius: 999px; min-width: 22px; height: 22px; font-size: 12px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 .empty { text-align: center; color: var(--text-muted, #888); padding: 16px; font-size: 13px; }
-.req-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--border, #e5e5e5); }
-.req-row.warn { background: rgba(239, 68, 68, .04); }
+.req-item-block { padding: 12px 0; border-bottom: 1px dashed var(--border, #e5e5e5); display: flex; flex-direction: column; gap: 8px; }
+.req-item-block.warn { background: rgba(239, 68, 68, .04); border-radius: 8px; padding: 10px; }
+.req-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .req-name { font-weight: 600; font-size: 14px; }
 .qty-ctrl { display: flex; align-items: center; gap: 4px; }
 .qty-ctrl button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border, #ddd); background: transparent; font-size: 18px; cursor: pointer; }
 .qty-ctrl input { width: 56px; text-align: center; }
+.btn-remove-row { color: var(--danger, #ef4444); border-color: rgba(239, 68, 68, 0.3) !important; font-size: 18px; }
+.customer-name-row { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+.customer-label { font-size: 12px; font-weight: 600; color: var(--text-muted, #666); }
+.input-customer-name { width: 100%; font-size: 13px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border, #ccc); }
 .btn-submit { margin-top: 14px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: none; border-radius: 12px; background: linear-gradient(135deg, var(--primary, #2563eb), #4f46e5); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
 .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
 </style>

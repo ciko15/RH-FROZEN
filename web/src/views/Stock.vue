@@ -20,8 +20,18 @@
           <Icon name="x" size="14" />
         </button>
       </div>
-      <div class="header-action-group" v-if="canManageStock">
+      <div class="header-action-group">
         <button
+          v-if="canSendStock"
+          class="btn-send-stock"
+          @click="openSendStockModal()"
+          title="Kirim Stok ke Sales"
+        >
+          <Icon name="truck" size="15" />
+          <span>Kirim ke Sales</span>
+        </button>
+        <button
+          v-if="canManageStock"
           class="btn-manage"
           @click="showAddModal = true"
           title="Tambah Produk / Barang Baru"
@@ -30,6 +40,7 @@
           <span>Tambah Barang</span>
         </button>
         <router-link
+          v-if="canManageStock"
           to="/stock/opname"
           class="btn-nav-stock"
           title="Buka Menu Stock Opname Fisik"
@@ -55,6 +66,20 @@
         @click="switchSource('admin')"
       >
         🏢 Stok Admin / Pusat
+      </button>
+    </div>
+
+    <!-- Filter Periode Monitoring Stok (Khusus Sales saat melihat Stok Saya) -->
+    <div v-if="isSales && stockSource === 'mine'" class="stock-period-tabs">
+      <span class="period-label">Periode:</span>
+      <button
+        v-for="p in periodOptions"
+        :key="p.key"
+        class="period-btn"
+        :class="{ active: selectedPeriod === p.key }"
+        @click="changePeriod(p.key)"
+      >
+        {{ p.label }}
       </button>
     </div>
 
@@ -104,8 +129,28 @@
 
             <!-- Badge Stok di pojok kanan atas -->
             <div class="stock-badge-pill" :class="p.is_low_stock ? 'badge-low' : 'badge-safe'">
-              <span class="stock-pill-lbl">Stok</span>
-              <strong class="stock-pill-val">{{ formatNumber(p.stock) }}</strong>
+              <span class="stock-pill-lbl">{{ isSales && stockSource === 'mine' ? 'Sisa Stok' : 'Stok' }}</span>
+              <strong class="stock-pill-val">{{ formatNumber(isSales && stockSource === 'mine' ? (p.sisa_stok !== undefined ? p.sisa_stok : p.stock) : p.stock) }}</strong>
+            </div>
+          </div>
+
+          <!-- Monitoring Detail untuk Sales (A4: Diminta, Dikirim, Laku, Sisa Stok) -->
+          <div v-if="isSales && stockSource === 'mine'" class="sales-stock-stats-grid">
+            <div class="stat-pill-item">
+              <span class="stat-pill-label">Diminta</span>
+              <strong class="stat-pill-value text-muted">{{ formatNumber(p.diminta || 0) }}</strong>
+            </div>
+            <div class="stat-pill-item">
+              <span class="stat-pill-label">Dikirim</span>
+              <strong class="stat-pill-value text-primary">{{ formatNumber(p.dikirim || 0) }}</strong>
+            </div>
+            <div class="stat-pill-item">
+              <span class="stat-pill-label">Laku</span>
+              <strong class="stat-pill-value text-danger">{{ formatNumber(p.laku || 0) }}</strong>
+            </div>
+            <div class="stat-pill-item highlight">
+              <span class="stat-pill-label">Sisa Stok</span>
+              <strong class="stat-pill-value text-success">{{ formatNumber(p.sisa_stok !== undefined ? p.sisa_stok : p.stock) }}</strong>
             </div>
           </div>
 
@@ -391,6 +436,76 @@
         </div>
       </div>
     </div>
+    <!-- Modal Kirim Stok Bebas ke Sales (B2) -->
+    <div v-if="showSendStockModal" class="sheet-overlay" @click.self="showSendStockModal = false">
+      <div class="sheet-content">
+        <div class="sheet-head">
+          <h3>Kirim Stok ke Sales</h3>
+          <button class="sheet-close" @click="showSendStockModal = false">
+            <Icon name="x" size="18" />
+          </button>
+        </div>
+
+        <div class="sheet-body">
+          <p class="hint">Admin bebas menentukan jumlah kirim ke sales (boleh kurang/lebih dari permintaan).</p>
+
+          <div class="form-group">
+            <label>Pilih Sales Penerima *</label>
+            <select v-model="sendForm.sales_id" class="form-select" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color)">
+              <option value="">-- Pilih Sales --</option>
+              <option v-for="s in salesUsersList" :key="s.id" :value="s.id">
+                👤 {{ s.full_name || s.username }} ({{ s.branch_id || 'Cabang' }})
+              </option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Pilih Barang *</label>
+            <select v-model="sendForm.product_id" class="form-select" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color)" @change="onSendProductChange">
+              <option value="">-- Pilih Barang --</option>
+              <option v-for="p in allAdminProducts" :key="p.id" :value="p.id">
+                {{ p.name }} (Stok Gudang: {{ formatNumber(p.stock) }} pcs)
+              </option>
+            </select>
+          </div>
+
+          <div v-if="selectedSendProduct" class="stock-ref-banner" style="background:var(--bg-hover, #f1f5f9);padding:10px;border-radius:8px;margin-bottom:12px;font-size:12px">
+            <div>Stok Gudang Pusat: <strong class="text-primary">{{ formatNumber(selectedSendProduct.stock) }} pcs</strong></div>
+            <div v-if="selectedProductRequestedQty > 0" class="text-warning" style="margin-top:2px">
+              ℹ️ Total permintaan aktif sales ini: <strong>{{ formatNumber(selectedProductRequestedQty) }} pcs</strong> (sebagai referensi)
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Jumlah Kirim (pcs) *</label>
+            <input
+              v-model.number="sendForm.qty"
+              type="number"
+              min="1"
+              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);font-size:16px;font-weight:700"
+              placeholder="Masukkan jumlah kirim..."
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Catatan / No Surat Jalan (Opsional)</label>
+            <input v-model="sendForm.note" type="text" placeholder="Contoh: Titipan pengiriman pagi" class="form-input" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color)" />
+          </div>
+
+          <button
+            class="btn-save"
+            style="width:100%;margin-top:14px;padding:12px;font-weight:700;border-radius:10px"
+            :disabled="sendStockLoading || !sendForm.sales_id || !sendForm.product_id || !sendForm.qty || sendForm.qty <= 0"
+            @click="submitSendStock"
+          >
+            <Icon name="truck" size="16" v-if="!sendStockLoading" />
+            <span>{{ sendStockLoading ? 'Mengirim...' : 'Kirim Stok Sekarang' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Datalist Rekomendasi Kategori Dinamis -->
     <datalist id="category-suggestions">
       <option v-for="cat in dynamicCategoryList" :key="cat" :value="cat" />
@@ -410,9 +525,99 @@ const authStore = useAuthStore();
 const appStore = useAppStore();
 const user = computed(() => authStore.user);
 const isSales = computed(() => user.value?.role === 'sales');
+const isAdmin = computed(() => ['admin', 'manajer'].includes(user.value?.role));
+const canSendStock = computed(() => isAdmin.value);
 const stockSource = ref('mine'); // 'mine' | 'admin'
 const mySalesStock = ref([]);
 const myStockCount = computed(() => mySalesStock.value.filter(s => s.stock > 0).length);
+
+const periodOptions = [
+  { key: 'semua', label: 'Semua' },
+  { key: 'hari_ini', label: 'Hari Ini' },
+  { key: 'minggu_ini', label: 'Minggu Ini' },
+  { key: 'bulan_ini', label: 'Bulan Ini' }
+];
+const selectedPeriod = ref('semua');
+
+function changePeriod(pKey) {
+  selectedPeriod.value = pKey;
+  fetchProducts();
+}
+
+// State Kirim Stok Bebas ke Sales (B2)
+const showSendStockModal = ref(false);
+const sendStockLoading = ref(false);
+const salesUsersList = ref([]);
+const allAdminProducts = ref([]);
+const sendForm = ref({
+  sales_id: '',
+  product_id: '',
+  qty: 1,
+  note: ''
+});
+const activeRequestsList = ref([]);
+
+const selectedSendProduct = computed(() => {
+  return allAdminProducts.value.find(p => p.id === sendForm.value.product_id) || null;
+});
+
+const selectedProductRequestedQty = computed(() => {
+  if (!sendForm.value.sales_id || !sendForm.value.product_id) return 0;
+  const match = activeRequestsList.value.find(r => r.sales_id === sendForm.value.sales_id && r.product_id === sendForm.value.product_id);
+  return match ? match.qty : 0;
+});
+
+async function openSendStockModal() {
+  showSendStockModal.value = true;
+  sendForm.value = { sales_id: '', product_id: '', qty: 1, note: '' };
+  try {
+    const [usersRes, prodRes, ordersRes] = await Promise.all([
+      apiFetch('/api/users'),
+      apiFetch('/api/products?active=true'),
+      apiFetch('/api/orders?status=Proses&limit=50')
+    ]);
+    salesUsersList.value = (usersRes.data || []).filter(u => u.role === 'sales' && u.active !== false);
+    allAdminProducts.value = prodRes.data || [];
+
+    // Kumpulkan referensi permintaan aktif per sales & product
+    const reqList = [];
+    (ordersRes.data || []).forEach(o => {
+      (o.items || []).forEach(it => {
+        reqList.push({ sales_id: o.sales_id, product_id: it.product_id, qty: parseInt(it.qty, 10) || 0 });
+      });
+    });
+    activeRequestsList.value = reqList;
+  } catch (err) {
+    appStore.showToast('Gagal memuat data pengiriman: ' + err.message, 'error');
+  }
+}
+
+function onSendProductChange() {
+  if (selectedSendProduct.value && selectedProductRequestedQty.value > 0) {
+    sendForm.value.qty = selectedProductRequestedQty.value;
+  }
+}
+
+async function submitSendStock() {
+  if (!sendForm.value.sales_id || !sendForm.value.product_id || !sendForm.value.qty || sendForm.value.qty <= 0) {
+    return appStore.showToast('Lengkapi data pengiriman stok', 'warning');
+  }
+
+  sendStockLoading.value = true;
+  try {
+    await apiFetch('/api/products/send-stock', {
+      method: 'POST',
+      body: JSON.stringify(sendForm.value)
+    });
+    appStore.showToast('Stok berhasil dikirim ke sales!', 'success');
+    showSendStockModal.value = false;
+    await fetchProducts();
+  } catch (err) {
+    appStore.showToast('Gagal mengirim stok: ' + err.message, 'error');
+  } finally {
+    sendStockLoading.value = false;
+  }
+}
 
 const canManageStock = computed(() => user.value?.role === 'admin' || (user.value?.role !== 'sales' && stockSource.value !== 'mine'));
 const canViewCost = computed(() => user.value?.role === 'admin' || user.value?.role === 'manajer');
@@ -659,7 +864,7 @@ async function fetchProducts() {
   loading.value = true;
   try {
     if (isSales.value && stockSource.value === 'mine') {
-      const res = await apiFetch('/api/products/sales-stock');
+      const res = await apiFetch(`/api/products/sales-stock?period=${selectedPeriod.value}`);
       mySalesStock.value = res.data || [];
       // Format sama dengan products agar komponen menampilkan nama, emoji, dll
       products.value = mySalesStock.value.map(s => ({
@@ -668,10 +873,14 @@ async function fetchProducts() {
         category: s.category || 'Lainnya',
         price: s.price,
         stock: s.stock,
+        diminta: s.diminta || 0,
+        dikirim: s.dikirim || 0,
+        laku: s.laku || 0,
+        sisa_stok: s.sisa_stok !== undefined ? s.sisa_stok : s.stock,
         emoji: s.emoji || '📦',
         image: s.image || '',
         active: true,
-        is_low_stock: s.stock <= 5
+        is_low_stock: (s.sisa_stok !== undefined ? s.sisa_stok : s.stock) <= 5
       }));
     } else {
       const res = await apiFetch('/api/products');
@@ -801,6 +1010,76 @@ onMounted(() => {
 .stock-page {
   padding: 16px;
   padding-bottom: 90px;
+}
+.btn-send-stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+.stock-period-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+.period-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+}
+.period-btn {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e5e5e5);
+  background: var(--bg-card, #fff);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted, #666);
+  cursor: pointer;
+}
+.period-btn.active {
+  background: var(--primary, #2563eb);
+  color: #fff;
+  border-color: var(--primary, #2563eb);
+}
+.sales-stock-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 10px;
+  margin-top: 8px;
+  background: var(--bg-hover, #f8fafc);
+  border-radius: 8px;
+  border-top: 1px dashed var(--border-color, #e5e5e5);
+}
+.stat-pill-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.stat-pill-label {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.stat-pill-value {
+  font-size: 13px;
+  font-weight: 700;
+}
+.stat-pill-item.highlight .stat-pill-value {
+  font-size: 14px;
 }
 .stock-source-tabs {
   display: flex;

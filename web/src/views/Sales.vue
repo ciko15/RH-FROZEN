@@ -1101,8 +1101,12 @@ async function loadInvoiceToCart(inv) {
   appStore.showToast(`Mode edit transaksi #${fullInv.invoice_no} aktif. Anda dapat menambah atau mengurangi barang langsung di kasir.`, 'info');
 }
 
+const activeOrderId = ref('');
+
 async function loadOrderSessionToCart(orderData) {
   if (!orderData || !orderData.items) return;
+
+  activeOrderId.value = orderData.order_id || '';
 
   // Set customer yang dipilih
   if (orderData.customer_id) {
@@ -1128,7 +1132,7 @@ async function loadOrderSessionToCart(orderData) {
       price: effPrice,
       isCustomPrice: isCustom,
       qty: requestedQty,
-      maxStock: Math.max(requestedQty, curStock),
+      maxStock: curStock,
       discount: 0,
       showDisc: false
     };
@@ -1154,6 +1158,28 @@ async function submitTransaction() {
   if (!selectedCustomerId.value) return appStore.showToast('Pilih pelanggan terlebih dahulu', 'warning');
   if (cart.value.length === 0) return appStore.showToast('Keranjang masih kosong', 'warning');
 
+  // Validasi stok sales (A3): transaksi hanya boleh jika stok sales cukup
+  const insufficientItems = [];
+  for (const it of cart.value) {
+    const s = stock.value.find(st => st.product_id === it.product_id);
+    const availableStock = s ? (parseInt(s.stock, 10) || 0) : 0;
+    const requestedQty = parseInt(it.qty, 10) || 0;
+    if (requestedQty > availableStock) {
+      insufficientItems.push({
+        name: it.product_name,
+        available: availableStock,
+        requested: requestedQty
+      });
+    }
+  }
+
+  if (insufficientItems.length > 0) {
+    const details = insufficientItems
+      .map(i => `${i.name} (Stok tersedia: ${i.available}, Diminta: ${i.requested})`)
+      .join(', ');
+    return appStore.showToast(`Transaksi ditolak! Stok sales tidak mencukupi untuk: ${details}`, 'error');
+  }
+
   submitting.value = true;
   const isEditing = !!editingInvoiceId.value;
   const clientKey = crypto.randomUUID();
@@ -1177,6 +1203,7 @@ async function submitTransaction() {
       customer_id: selectedCustomerId.value,
       pay_method: payMethod.value,
       paid_amount: effectivePaid,
+      order_id: activeOrderId.value || undefined,
       note: ((txNote.value ? txNote.value.trim() : '') + noteExtra).trim(),
       items: cart.value.map(it => ({
         product_id: it.product_id,
@@ -1210,6 +1237,7 @@ async function submitTransaction() {
     editingInvoiceId.value = null;
     editingInvoiceNo.value = '';
     editingInvoiceOriginal.value = null;
+    activeOrderId.value = '';
     cart.value = [];
     selectedCustomerId.value = '';
     txNote.value = '';

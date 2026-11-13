@@ -25,43 +25,62 @@
       </button>
     </div>
 
-    <!-- REKAPAN PRODUK BELUM TERKIRIM (KHUSUS ADMIN) -->
+    <!-- REKAPAN PERMINTAAN BARANG (LAPORAN ORDER BARANG KHUSUS ADMIN) -->
     <div v-if="isAdmin && pendingSummary.length > 0" class="card pending-summary-card" :class="{ 'has-shortage': shortageCount > 0 }">
       <div class="summary-head" @click="showSummaryDetails = !showSummaryDetails">
         <div class="summary-title-wrap">
           <span class="summary-icon">📦</span>
           <div>
-            <div class="summary-title">Rekap Orderan Belum Terkirim (Total Semua Sales)</div>
-            <small class="summary-subtitle">{{ formatNumber(pendingSummary.length) }} jenis produk · {{ formatNumber(totalPendingQty) }} pcs harus disiapkan</small>
+            <div class="summary-title">Laporan Akumulasi Permintaan Barang</div>
+            <small class="summary-subtitle">{{ formatNumber(pendingSummary.length) }} jenis produk · {{ formatNumber(totalPendingQty) }} pcs total order</small>
           </div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          <span v-if="shortageCount > 0" class="shortage-alert-badge">⚠️ {{ formatNumber(shortageCount) }} barang stok kurang</span>
+          <span v-if="shortageCount > 0" class="shortage-alert-badge">⚠️ {{ formatNumber(shortageCount) }} barang stok gudang kurang</span>
           <button type="button" class="btn-toggle-summary">
-            {{ showSummaryDetails ? 'Sembunyikan ▲' : 'Lihat Detail ▼' }}
+            {{ showSummaryDetails ? 'Sembunyikan ▲' : 'Buka Rincian ▼' }}
           </button>
         </div>
       </div>
 
       <div v-if="showSummaryDetails" class="summary-body">
         <div v-for="ps in pendingSummary" :key="ps.product_id" class="summary-item" :class="{ 'shortage-item': ps.shortage > 0 }">
-          <div class="sum-prod-head">
+          <div class="sum-prod-head" @click="toggleProductAccordion(ps.product_id)" style="cursor:pointer">
             <div class="sum-name-col">
-              <strong>{{ ps.name }}</strong>
-              <!-- Badge stok kurang atau cukup -->
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="accordion-arrow">{{ isProductExpanded(ps.product_id) ? '▼' : '▶' }}</span>
+                <strong>{{ ps.name }}</strong>
+              </div>
               <span v-if="ps.shortage > 0" class="stock-badge stock-badge--low">⚠️ Stok kurang {{ formatNumber(ps.shortage) }} pcs</span>
               <span v-else class="stock-badge stock-badge--ok">✅ Stok cukup</span>
             </div>
             <div class="sum-qty-col">
-              <span class="sum-prod-total">Dibutuhkan: <strong>{{ formatNumber(ps.total_qty) }} pcs</strong></span>
-              <span class="sum-admin-stock" :class="ps.shortage > 0 ? 'stock-low' : 'stock-ok'">Stok admin: {{ formatNumber(ps.admin_stock) }} pcs</span>
+              <span class="sum-prod-total">Total Diminta: <strong>{{ formatNumber(ps.total_qty) }} pcs</strong></span>
+              <span class="sum-admin-stock" :class="ps.shortage > 0 ? 'stock-low' : 'stock-ok'">Stok gudang: {{ formatNumber(ps.admin_stock) }} pcs</span>
             </div>
           </div>
-          <!-- Rincian per sales -->
-          <div class="sum-breakdown">
-            <span v-for="(sb, i) in ps.sales_breakdown" :key="i" class="breakdown-chip">
-              👤 {{ sb.sales_name }}: <strong>{{ formatNumber(sb.qty) }} pcs</strong> ({{ sb.order_no }})
-            </span>
+
+          <!-- Rincian Keterangan Accordion (B1): nama pemesan, sales, qty, tanggal -->
+          <div v-if="isProductExpanded(ps.product_id)" class="sum-breakdown-accordion">
+            <div class="accordion-title">Rincian Pemesan & Sales:</div>
+            <div v-for="(sb, i) in ps.sales_breakdown" :key="i" class="accordion-row">
+              <div class="acc-left">
+                <span class="acc-customer">👤 <strong>{{ sb.nama_pemesan || 'Tanpa Nama' }}</strong></span>
+                <span class="acc-sales text-muted">(Sales: {{ sb.sales_name }} · {{ sb.order_no }})</span>
+                <small v-if="sb.date" class="acc-date text-muted">📅 {{ sb.date }}</small>
+              </div>
+              <div class="acc-right">
+                <strong class="acc-qty">{{ formatNumber(sb.qty) }} pcs</strong>
+                <button
+                  type="button"
+                  class="btn-acc-delete"
+                  title="Hapus permintaan ini (soft delete)"
+                  @click.stop="confirmDeleteFromSummary(sb)"
+                >
+                  <Icon name="trash" size="13" /> Hapus
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -132,6 +151,9 @@
           <div v-for="it in selected.items" :key="it.id" class="item-row">
             <div class="item-info">
               <div class="item-name">{{ it.product_name || it.name }}</div>
+              <div class="item-pemesan-label">
+                Pemesan: <strong>{{ it.nama_pemesan || '-' }}</strong>
+              </div>
               <small v-if="selected.status === 'Proses' && it.shortage > 0" class="text-danger">⚠️ Stok admin kurang {{ formatNumber(it.shortage) }} pcs</small>
               <div v-if="selected.status === 'Dikirim'" class="item-shipped-details">
                 <span class="sub-qty text-muted">Permintaan: {{ formatNumber(it.qty) }} pcs</span>
@@ -162,30 +184,42 @@
             </strong>
           </div>
 
+          <!-- AKSI PERMINTAAN (A3 & B1) -->
           <div class="action-buttons">
-            <button v-if="canProceedToSale" class="btn-action btn-proceed-sale" @click="openCustomerPickerForTransaction()">
+            <!-- Sisi Sales: Hapus, Edit, Jadikan Transaksi (bisa langsung jika belum jadi transaksi) -->
+            <button
+              v-if="isSales && selected.status !== 'Sudah Jadi Transaksi'"
+              class="btn-action btn-proceed-sale"
+              @click="openCustomerPickerForTransaction()"
+            >
               <Icon name="cart" size="16" />
-              <span>Lanjutkan ke Transaksi</span>
+              <span>Jadikan Transaksi</span>
             </button>
-            <button v-if="canShip" class="btn-action btn-ship" :disabled="actionLoading" @click="openShipModal">
-              <Icon name="truck" size="16" />
-              <span>Konfirmasi Pengiriman</span>
-            </button>
-            <button v-if="canEditOrder" class="btn-action btn-edit-order" :disabled="actionLoading" @click="openEditOrderModal">
+            <button
+              v-if="isSales && selected.status === 'Proses'"
+              class="btn-action btn-edit-order"
+              :disabled="actionLoading"
+              @click="openEditOrderModal"
+            >
               <Icon name="edit" size="16" />
               <span>Edit Pesanan</span>
             </button>
-            <button v-if="canDeleteOrder" class="btn-action btn-delete-order" :disabled="actionLoading" @click="handleDeleteOrder">
+            <button
+              v-if="canDeleteOrder"
+              class="btn-action btn-delete-order"
+              :disabled="actionLoading"
+              @click="handleDeleteOrder"
+            >
               <Icon name="trash" size="16" />
-              <span>Hapus Pesanan</span>
-            </button>
-            <button v-if="canCancel" class="btn-action btn-cancel" :disabled="actionLoading" @click="handleCancel">
-              <Icon name="x" size="16" />
-              <span>Batalkan</span>
+              <span>Hapus</span>
             </button>
           </div>
-          <p v-if="canProceedToSale" class="hint">Order sudah dikirim. Klik untuk memilih customer dan memasukkan barang ke kasir transaksi.</p>
-          <p v-if="canShip" class="hint">Klik konfirmasi untuk memeriksa & mengubah jumlah barang yang dikirim.</p>
+          <p v-if="isSales && selected.status !== 'Sudah Jadi Transaksi'" class="hint">
+            Klik "Jadikan Transaksi" untuk membawa pesanan langsung ke kasir penjualan. Stok Anda akan divalidasi.
+          </p>
+          <p v-if="selected.status === 'Sudah Jadi Transaksi'" class="hint text-success">
+            ✅ Pesanan ini sudah selesai dijadikan transaksi kasir (tidak dapat diedit/ditransaksikan ulang).
+          </p>
         </div>
       </div>
     </div>
@@ -225,7 +259,7 @@
               ⚠️ Minimal 1 barang harus diminta dalam pesanan.
             </div>
             <div v-else class="edit-order-items-scroll">
-              <div v-for="(it, idx) in editOrderItems" :key="it.product_id" class="edit-order-item-card">
+              <div v-for="(it, idx) in editOrderItems" :key="idx" class="edit-order-item-card">
                 <div class="edit-order-item-info">
                   <div class="edit-order-item-name font-bold">{{ it.product_name || it.name }}</div>
                   <small class="text-muted">Stok admin: {{ formatNumber(it.admin_stock || 0) }} pcs</small>
@@ -240,6 +274,18 @@
                   <button type="button" class="btn-del-item" @click="editOrderItems.splice(idx, 1)" title="Hapus Barang">
                     <Icon name="trash" size="15" />
                   </button>
+                </div>
+
+                <!-- Input Nama Pemesan per item saat edit -->
+                <div class="edit-item-pemesan-row" style="width:100%;margin-top:6px;">
+                  <input
+                    v-model="it.nama_pemesan"
+                    type="text"
+                    placeholder="Nama Pemesan / Catatan (wajib)"
+                    class="form-input text-sm"
+                    style="font-size:12px;padding:6px 8px;width:100%"
+                    required
+                  />
                 </div>
               </div>
             </div>
@@ -515,17 +561,40 @@ const role = computed(() => authStore.user?.role);
 const isSales = computed(() => role.value === 'sales');
 const isAdmin = computed(() => ['admin', 'manajer'].includes(role.value));
 
-const tabs = ['Semua', 'Proses', 'Dikirim', 'Dibatalkan'];
+const tabs = ['Semua', 'Proses', 'Sudah Jadi Transaksi', 'Dibatalkan'];
 const currentTab = ref('Proses');
 const searchQuery = ref('');
 const orders = ref([]);
 const pendingSummary = ref([]);
 const showSummaryDetails = ref(true);
+const expandedProductIds = ref(new Set());
 const loading = ref(false);
 const selected = ref(null);
 const actionLoading = ref(false);
 
-// Modal Konfirmasi Pengiriman
+function isProductExpanded(productId) {
+  return expandedProductIds.value.has(productId);
+}
+function toggleProductAccordion(productId) {
+  if (expandedProductIds.value.has(productId)) {
+    expandedProductIds.value.delete(productId);
+  } else {
+    expandedProductIds.value.add(productId);
+  }
+}
+
+async function confirmDeleteFromSummary(sb) {
+  if (!confirm(`Hapus permintaan barang untuk ${sb.nama_pemesan || 'pemesan'} (${sb.qty} pcs)?`)) return;
+  try {
+    await apiFetch(`/api/orders/${sb.order_id}`, { method: 'DELETE' });
+    appStore.showToast('Permintaan barang berhasil dihapus dari laporan', 'success');
+    await load();
+  } catch (err) {
+    appStore.showToast('Gagal menghapus permintaan: ' + err.message, 'error');
+  }
+}
+
+// Modal Konfirmasi Pengiriman (Legacy compatibility)
 const showShipModal = ref(false);
 const shippingItems = ref([]);
 
@@ -545,14 +614,14 @@ const filteredOrders = computed(() => {
   const q = searchQuery.value.toLowerCase().trim();
   return orders.value
     .filter(o => currentTab.value === 'Semua' || o.status === currentTab.value)
-    .filter(o => !q || (o.order_no || '').toLowerCase().includes(q) || (o.sales_name || '').toLowerCase().includes(q));
+    .filter(o => !q || (o.order_no || '').toLowerCase().includes(q) || (o.sales_name || '').toLowerCase().includes(q) || (o.items && o.items.some(it => (it.nama_pemesan || '').toLowerCase().includes(q))));
 });
 
-const canShip = computed(() => isAdmin.value && selected.value?.status === 'Proses');
+const canShip = computed(() => false); // Alur lama konfirmasi dihapus
 const canCancel = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
 const canEditOrder = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
-const canDeleteOrder = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
-const canProceedToSale = computed(() => selected.value?.status === 'Dikirim');
+const canDeleteOrder = computed(() => (isAdmin.value || isSales.value) && selected.value?.status !== 'Sudah Jadi Transaksi');
+const canProceedToSale = computed(() => isSales.value && selected.value?.status !== 'Sudah Jadi Transaksi');
 
 // Modal Pilih Pelanggan untuk Lanjut Transaksi
 const showSelectCustomerModal = ref(false);
@@ -574,7 +643,7 @@ const filteredCustomersForTx = computed(() => {
 
 async function openCustomerPickerForTransaction(order) {
   const ord = order || selected.value;
-  if (!ord || ord.status !== 'Dikirim') return;
+  if (!ord || ord.status === 'Sudah Jadi Transaksi') return;
   orderToProceed.value = ord;
   selectedCustomerIdForTx.value = '';
   customerSearchText.value = '';
@@ -659,6 +728,7 @@ async function openEditOrderModal() {
     product_id: it.product_id,
     name: it.product_name || it.name,
     qty: it.qty || 1,
+    nama_pemesan: it.nama_pemesan || '',
     admin_stock: it.admin_stock || 0
   }));
   selectedNewProductId.value = '';
@@ -679,23 +749,24 @@ function addItemToEditingOrder() {
   const prod = allProductsList.value.find(p => p.id === selectedNewProductId.value);
   if (!prod) return;
 
-  const existing = editOrderItems.value.find(it => it.product_id === prod.id);
-  if (existing) {
-    existing.qty++;
-  } else {
-    editOrderItems.value.push({
-      product_id: prod.id,
-      name: prod.name,
-      qty: 1,
-      admin_stock: parseInt(prod.stock, 10) || 0
-    });
-  }
+  editOrderItems.value.push({
+    product_id: prod.id,
+    name: prod.name,
+    qty: 1,
+    nama_pemesan: '',
+    admin_stock: parseInt(prod.stock, 10) || 0
+  });
   selectedNewProductId.value = '';
 }
 
 async function submitSaveEditOrder() {
   if (editOrderItems.value.length === 0) {
     return appStore.showToast('Minimal 1 barang harus diminta', 'warning');
+  }
+
+  const emptyPemesan = editOrderItems.value.find(it => !it.nama_pemesan || !String(it.nama_pemesan).trim());
+  if (emptyPemesan) {
+    return appStore.showToast(`Nama pemesan untuk ${emptyPemesan.name || 'barang'} wajib diisi`, 'warning');
   }
 
   saveOrderLoading.value = true;
@@ -706,7 +777,8 @@ async function submitSaveEditOrder() {
         note: editOrderNote.value,
         items: editOrderItems.value.map(it => ({
           product_id: it.product_id,
-          qty: parseInt(it.qty, 10) || 1
+          qty: parseInt(it.qty, 10) || 1,
+          nama_pemesan: it.nama_pemesan.trim()
         }))
       })
     });
@@ -723,7 +795,11 @@ async function submitSaveEditOrder() {
 
 async function handleDeleteOrder() {
   if (!selected.value) return;
-  if (!confirm(`Hapus permanen permintaan stok #${selected.value.order_no}?`)) return;
+  const isAdm = isAdmin.value;
+  const msg = isAdm
+    ? `Hapus permintaan stok #${selected.value.order_no} dari daftar laporan admin? (Data sales tetap ada)`
+    : `Hapus pesanan #${selected.value.order_no}?`;
+  if (!confirm(msg)) return;
 
   actionLoading.value = true;
   try {
@@ -742,7 +818,12 @@ async function handleDeleteOrder() {
 }
 
 function badgeClass(s) {
-  return { Proses: 'badge-proses', Dikirim: 'badge-dikirim', Dibatalkan: 'badge-batal' }[s] || '';
+  return {
+    Proses: 'badge-proses',
+    Dikirim: 'badge-dikirim',
+    'Sudah Jadi Transaksi': 'badge-dikirim',
+    Dibatalkan: 'badge-batal'
+  }[s] || 'badge-proses';
 }
 
 async function load() {
@@ -895,6 +976,77 @@ onMounted(load);
   flex-direction: column;
   gap: 14px;
   padding-bottom: 90px;
+}
+.sum-breakdown-accordion {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color, #e5e5e5);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.accordion-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted, #888);
+}
+.accordion-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-hover, #f8fafc);
+  border-radius: 8px;
+  padding: 8px 10px;
+  gap: 8px;
+}
+.acc-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.acc-customer {
+  font-size: 13px;
+  color: var(--text-main, #1e293b);
+}
+.acc-sales {
+  font-size: 11px;
+}
+.acc-date {
+  font-size: 10px;
+}
+.acc-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.acc-qty {
+  font-size: 13px;
+  color: var(--primary, #2563eb);
+}
+.btn-acc-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: transparent;
+  color: var(--danger, #ef4444);
+  cursor: pointer;
+}
+.btn-acc-delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+.accordion-arrow {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+}
+.item-pemesan-label {
+  font-size: 12px;
+  color: var(--primary, #2563eb);
+  margin-top: 2px;
 }
 .header-action {
   display: flex;
