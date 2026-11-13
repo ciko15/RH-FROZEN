@@ -220,15 +220,16 @@ function normalizeTabRows(tabName, rows) {
   }
 
   if (tabName === 'OrderItems') {
-    // Normalisasi baris OrderItems: pada beberapa baris gviz, kolom name terisi angka qty karena kolom nama produk tidak tersimpan
+    // Normalisasi baris OrderItems: pastikan nama_pemesan terisi default '-' jika kosong
     return rows.map(it => {
       const nameVal = String(it.name || '').trim();
       const qtyVal = it.qty !== undefined && it.qty !== null ? String(it.qty).trim() : '';
 
+      let normalized = { ...it };
       // Jika qty kosong dan name berisi angka murni, berarti kolom bergeser (name adalah qty)
       if (qtyVal === '' && nameVal && !isNaN(Number(nameVal))) {
         const actualQty = parseInt(nameVal, 10) || 0;
-        return {
+        normalized = {
           ...it,
           name: '', // nama produk akan diisi dari master Products
           qty: actualQty,
@@ -236,7 +237,10 @@ function normalizeTabRows(tabName, rows) {
           qty_shipped: it.qty_shipped !== undefined && it.qty_shipped !== '' && it.qty_shipped !== null ? (parseInt(it.qty_shipped, 10) || 0) : ''
         };
       }
-      return it;
+      if (!normalized.nama_pemesan || String(normalized.nama_pemesan).trim() === '') {
+        normalized.nama_pemesan = '-';
+      }
+      return normalized;
     });
   }
 

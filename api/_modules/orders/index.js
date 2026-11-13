@@ -1,16 +1,18 @@
 import { z } from 'zod';
 import { authenticate } from '../_lib/auth.js';
 import { requireRole, sanitizeOutputForRole } from '../_lib/rbac.js';
-import { getTabsBatch } from '../_lib/sheets.js';
+import { getTabsBatch, appendRow } from '../_lib/sheets.js';
 import { callGas } from '../_lib/gas.js';
 import { validateBody } from '../_lib/validate.js';
 import { checkIdempotency, saveIdempotency } from '../_lib/idempotency.js';
 import { handleApiError, ApiError } from '../_lib/errors.js';
+import { CR_CONFIG } from '../_lib/config.js';
 
-// Schema baru: hanya qty, tidak ada harga/customer
+// Schema order item: wajib nama_pemesan, product_id, qty
 const orderItemSchema = z.object({
   product_id: z.string().min(1, 'ID barang wajib diisi'),
   qty: z.number().int().positive('Qty harus berupa angka bulat positif'),
+  nama_pemesan: z.string().min(1, 'Nama pemesan wajib diisi').default(CR_CONFIG.DEFAULT_NAMA_PEMESAN),
 });
 
 const createOrderSchema = z.object({
@@ -60,11 +62,16 @@ export default async function handler(req, res) {
         };
       });
 
-      // RBAC: Sales hanya lihat order sendiri
+      // RBAC & Soft delete handling:
+      // - Admin menyembunyikan order jika dihapus oleh admin (deleted_by atau deleted_at ada)
+      // - Sales tetap melihat order miliknya
       if (authUser.role === 'sales') {
-        orders = orders.filter(o => o.sales_id === authUser.id);
-      } else if (authUser.role !== 'admin' && authUser.branch_id) {
-        orders = orders.filter(o => !o.branch_id || o.branch_id === authUser.branch_id);
+        orders = orders.filter(o => o.sales_id === authUser.id && o.status !== CR_CONFIG.STATUS_CANCELLED);
+      } else if (authUser.role === 'admin' || authUser.role === 'manajer') {
+        // Sembunyikan order yang di-soft-delete admin
+        orders = orders.filter(o => !o.deleted_at && o.status !== CR_CONFIG.STATUS_CANCELLED);
+      } else if (authUser.branch_id) {
+        orders = orders.filter(o => (!o.branch_id || o.branch_id === authUser.branch_id) && !o.deleted_at);
       }
 
       // Filter status
@@ -83,6 +90,7 @@ export default async function handler(req, res) {
             : (o.status === 'Dikirim' ? requestedQty : null);
           return {
             ...oi,
+            nama_pemesan: oi.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
             product_name: prod ? prod.name : oi.name,
             admin_stock: parseInt(prod?.stock || 0, 10),
             qty: requestedQty,
@@ -114,7 +122,8 @@ export default async function handler(req, res) {
       if (search) {
         filtered = enrichedOrders.filter(o =>
           (o.order_no && o.order_no.toLowerCase().includes(search)) ||
-          (o.sales_name && o.sales_name.toLowerCase().includes(search))
+          (o.sales_name && o.sales_name.toLowerCase().includes(search)) ||
+          (o.items && o.items.some(it => (it.nama_pemesan && it.nama_pemesan.toLowerCase().includes(search))))
         );
       }
 
@@ -125,7 +134,7 @@ export default async function handler(req, res) {
         return timeB - timeA;
       });
 
-      // Rekap akumulasi produk yang belum terkirim (status: Proses) dari semua order
+      // Rekap akumulasi produk yang belum ditransaksikan / belum dikirim (status: Proses) dari semua order
       const pendingOrders = enrichedOrders.filter(o => o.status === 'Proses');
       const pendingSummaryMap = new Map();
 
@@ -149,9 +158,12 @@ export default async function handler(req, res) {
           const itemSummary = pendingSummaryMap.get(pid);
           itemSummary.total_qty += qty;
           itemSummary.sales_breakdown.push({
-            sales_name: po.sales_name,
+            order_id: po.id,
             order_no: po.order_no,
-            qty
+            sales_name: po.sales_name,
+            nama_pemesan: it.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
+            qty,
+            date: po.order_date || po.created_at || '-'
           });
         }
       }
@@ -204,7 +216,52 @@ export default async function handler(req, res) {
         client_key: idempotencyKey || data.client_key,
       };
 
-      const resultOrder = await callGas('createOrder', gasPayload);
+      let resultOrder;
+      try {
+        resultOrder = await callGas('createOrder', gasPayload);
+      } catch (gasErr) {
+        console.warn('[GAS CREATE_ORDER FALLBACK] Menulis langsung ke Sheets:', gasErr.message);
+        const { getNextId, clearCache } = await import('../_lib/sheets.js');
+        const now = new Date();
+        const dateStr = now.toISOString().substring(0, 10);
+        const timeStr = now.toTimeString().substring(0, 8);
+        const orderId = crypto.randomUUID();
+        const orderNo = `STK-${branchId || 'BR'}-${dateStr.replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        const newOrder = {
+          id: orderId,
+          order_no: orderNo,
+          order_date: dateStr,
+          order_time: timeStr,
+          sales_id: authUser.id,
+          branch_id: branchId || '',
+          status: CR_CONFIG.STATUS_INITIAL,
+          note: data.note || '',
+          type: 'STOCK_REQUEST',
+          client_key: idempotencyKey || data.client_key || '',
+          created_at: now.toISOString()
+        };
+
+        const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at'];
+        await appendRow('Orders', newOrder, ORDER_HEADERS);
+
+        const ORDER_ITEM_HEADERS = ['id', 'order_id', 'product_id', 'name', 'qty', 'nama_pemesan', 'shortage', 'qty_shipped'];
+        for (const it of data.items) {
+          await appendRow('OrderItems', {
+            id: crypto.randomUUID(),
+            order_id: orderId,
+            product_id: it.product_id,
+            name: '',
+            qty: it.qty,
+            nama_pemesan: it.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
+            shortage: 0,
+            qty_shipped: ''
+          }, ORDER_ITEM_HEADERS);
+        }
+
+        clearCache();
+        resultOrder = newOrder;
+      }
 
       const responsePayload = {
         ok: true,

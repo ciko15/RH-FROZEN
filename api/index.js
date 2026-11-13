@@ -138,6 +138,10 @@ export default async function handler(req, res) {
     }
 
     // 6. Products & Stock
+    if (pathname === '/api/products/send-stock') {
+      const { default: h } = await import('./_modules/products/send-stock.js');
+      return await h(req, res);
+    }
     if (pathname === '/api/products/sales-stock') {
       const { default: h } = await import('./_modules/products/sales-stock.js');
       return await h(req, res);

@@ -5,20 +5,24 @@ import { getTabsBatch, updateRow } from '../_lib/sheets.js';
 import { validateBody } from '../_lib/validate.js';
 import { handleApiError, ApiError } from '../_lib/errors.js';
 import { logAudit } from '../_lib/audit.js';
+import { CR_CONFIG } from '../_lib/config.js';
 
 const editOrderSchema = z.object({
   note: z.string().optional(),
   customer_name: z.string().optional(),
   customer_phone: z.string().optional(),
+  status: z.string().optional(),
   items: z.array(z.object({
+    id: z.string().optional(),
     product_id: z.string().min(1),
-    qty: z.coerce.number().int().positive('Qty harus positif')
+    qty: z.coerce.number().int().positive('Qty harus positif'),
+    nama_pemesan: z.string().optional().default(CR_CONFIG.DEFAULT_NAMA_PEMESAN)
   })).min(1, 'Minimal 1 barang').optional()
 });
 
-const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by'];
+const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by', 'deleted_at', 'deleted_by'];
 const CUST_HEADERS = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
-const ORDER_ITEM_HEADERS = ['id', 'order_id', 'product_id', 'qty', 'qty_shipped', 'price'];
+const ORDER_ITEM_HEADERS = ['id', 'order_id', 'product_id', 'name', 'qty', 'nama_pemesan', 'shortage', 'qty_shipped', 'deleted_at'];
 
 export default async function handler(req, res) {
   try {
@@ -64,6 +68,7 @@ export default async function handler(req, res) {
           ...it,
           name: resolvedName,
           product_name: resolvedName,
+          nama_pemesan: it.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
           emoji: prod ? prod.emoji : '📦',
           admin_stock: parseInt(prod?.stock || 0, 10),
           qty: requestedQty,
@@ -123,6 +128,7 @@ export default async function handler(req, res) {
               ...oldRow,
               product_id: newItem.product_id,
               qty: newItem.qty,
+              nama_pemesan: newItem.nama_pemesan || oldRow.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
               qty_shipped: ''
             };
             if (oldRow._rowIndex) {
@@ -136,9 +142,12 @@ export default async function handler(req, res) {
                 id: oldRow.id,
                 order_id: order.id,
                 product_id: oldRow.product_id,
+                name: oldRow.name || '',
                 qty: 0,
+                nama_pemesan: oldRow.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
+                shortage: 0,
                 qty_shipped: 0,
-                price: 0
+                deleted_at: new Date().toISOString()
               }, ORDER_ITEM_HEADERS);
             }
           } else if (i >= currentOrderItems.length && i < data.items.length) {
@@ -148,11 +157,22 @@ export default async function handler(req, res) {
               id: crypto.randomUUID(),
               order_id: order.id,
               product_id: newItem.product_id,
+              name: '',
               qty: newItem.qty,
-              qty_shipped: '',
-              price: 0
+              nama_pemesan: newItem.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
+              shortage: 0,
+              qty_shipped: ''
             }, ORDER_ITEM_HEADERS);
           }
+        }
+      }
+
+      // 1b. Update status pesanan jika diminta (misal: "Sudah Jadi Transaksi")
+      if (data.status && data.status !== order.status) {
+        order.status = data.status;
+        order.updated_at = new Date().toISOString();
+        if (order._rowIndex) {
+          await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
         }
       }
 
@@ -203,6 +223,8 @@ export default async function handler(req, res) {
 
     // ==========================================
     // DELETE: Hapus Pesanan Permintaan (Admin / Sales)
+    // - Jika sales: membatalkan/menghapus order miliknya
+    // - Jika admin: soft delete pada tampilan admin, data sales tetap ada
     // ==========================================
     if (req.method === 'DELETE') {
       requireRole(authUser, ['admin', 'manajer', 'sales']);
@@ -211,15 +233,28 @@ export default async function handler(req, res) {
         throw new ApiError(403, 'FORBIDDEN', 'Anda hanya dapat menghapus pesanan milik Anda sendiri');
       }
 
-      if (order.status !== 'Proses') {
-        throw new ApiError(400, 'INVALID_STATUS', 'Hanya pesanan berstatus Proses yang dapat dihapus');
-      }
+      const nowIso = new Date().toISOString();
 
-      // Tandai order menjadi Dibatalkan / Dihapus
-      order.status = 'Dibatalkan';
-      order.note = (order.note ? order.note + ' | ' : '') + 'Dihapus oleh ' + authUser.username;
-      if (order._rowIndex) {
-        await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
+      if (authUser.role === 'admin' || authUser.role === 'manajer') {
+        // Admin soft delete: sembunyikan di admin namun tandai
+        order.deleted_at = nowIso;
+        order.deleted_by = authUser.username || authUser.id;
+        order.note = (order.note ? order.note + ' | ' : '') + 'Dihapus oleh Admin ' + (authUser.username || '');
+        if (order._rowIndex) {
+          await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
+        }
+      } else {
+        // Sales menghapus order miliknya sendiri (hanya bila belum transaksi)
+        if (order.status === CR_CONFIG.STATUS_TRANSACTED) {
+          throw new ApiError(400, 'INVALID_STATUS', 'Pesanan yang sudah jadi transaksi tidak dapat dihapus');
+        }
+        order.status = CR_CONFIG.STATUS_CANCELLED;
+        order.deleted_at = nowIso;
+        order.deleted_by = authUser.username || authUser.id;
+        order.note = (order.note ? order.note + ' | ' : '') + 'Dihapus oleh ' + authUser.username;
+        if (order._rowIndex) {
+          await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
+        }
       }
 
       const { clearCache } = await import('../_lib/cache.js');
@@ -227,7 +262,8 @@ export default async function handler(req, res) {
 
       await logAudit(authUser.id, 'DELETE_ORDER', {
         order_id: order.id,
-        order_no: order.order_no
+        order_no: order.order_no,
+        role: authUser.role
       });
 
       return res.status(200).json({

@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { authenticate } from '../_lib/auth.js';
 import { requireRole, sanitizeOutputForRole } from '../_lib/rbac.js';
-import { getTabsBatch } from '../_lib/sheets.js';
+import { getTabsBatch, updateRow } from '../_lib/sheets.js';
 import { callGas } from '../_lib/gas.js';
 import { validateBody } from '../_lib/validate.js';
 import { checkIdempotency, saveIdempotency } from '../_lib/idempotency.js';
 import { handleApiError, ApiError } from '../_lib/errors.js';
+import { CR_CONFIG } from '../_lib/config.js';
 
 const createInvoiceSchema = z.object({
   customer_id: z.string().min(1, 'Pelanggan wajib dipilih'),
@@ -19,7 +20,8 @@ const createInvoiceSchema = z.object({
   paid_amount: z.coerce.number().min(0, 'Jumlah bayar tidak boleh negatif').optional().default(0),
   note: z.string().optional().default(''),
   approved_by: z.string().optional(),
-  client_key: z.string().optional()
+  client_key: z.string().optional(),
+  order_id: z.string().optional()
 });
 
 export default async function handler(req, res) {
@@ -127,10 +129,30 @@ export default async function handler(req, res) {
         user_id: authUser.id,
         branch_id: authUser.branch_id || '',
         approved_by: data.approved_by,
-        client_key: data.client_key || idempotencyKey || ''
+        client_key: data.client_key || idempotencyKey || '',
+        order_id: data.order_id || ''
       };
 
       const resultInvoice = await callGas('createSalesTx', gasPayload);
+
+      // Jika transaksi berasal dari order_id, pastikan status pesanan diupdate menjadi "Sudah Jadi Transaksi"
+      if (data.order_id) {
+        try {
+          const tabs = await getTabsBatch(['Orders'], true);
+          const orders = tabs.Orders || [];
+          const matchedOrder = orders.find(o => o.id === data.order_id || o.order_no === data.order_id);
+          if (matchedOrder && matchedOrder._rowIndex) {
+            matchedOrder.status = CR_CONFIG.STATUS_TRANSACTED;
+            matchedOrder.updated_at = new Date().toISOString();
+            const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by', 'deleted_at', 'deleted_by'];
+            await updateRow('Orders', matchedOrder._rowIndex, matchedOrder, ORDER_HEADERS);
+            const { clearCache } = await import('../_lib/cache.js');
+            clearCache();
+          }
+        } catch (updateErr) {
+          console.warn('[UPDATE_ORDER_STATUS_AFTER_TX] Gagal update status order:', updateErr.message);
+        }
+      }
 
       const responsePayload = {
         ok: true,
