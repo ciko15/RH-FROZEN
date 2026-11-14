@@ -436,72 +436,240 @@
         </div>
       </div>
     </div>
-    <!-- Modal Kirim Stok Bebas ke Sales (B2) -->
-    <div v-if="showSendStockModal" class="sheet-overlay" @click.self="showSendStockModal = false">
-      <div class="sheet-content">
+    <!-- Modal Kirim Stok Bebas ke Sales Batch (R1) -->
+    <div v-if="showSendStockModal" class="sheet-overlay batch-send-overlay" @click.self="showSendStockModal = false">
+      <div class="sheet-content batch-send-content">
         <div class="sheet-head">
-          <h3>Kirim Stok ke Sales</h3>
+          <div>
+            <h3>Kirim Stok ke Sales</h3>
+            <span class="subtext">Kirim banyak barang sekaligus dalam satu batch pengiriman</span>
+          </div>
           <button class="sheet-close" @click="showSendStockModal = false">
             <Icon name="x" size="18" />
           </button>
         </div>
 
-        <div class="sheet-body">
-          <p class="hint">Admin bebas menentukan jumlah kirim ke sales (boleh kurang/lebih dari permintaan).</p>
+        <div class="sheet-body batch-send-body">
+          <!-- 1. STICKY SALES SELECTOR DI ATAS -->
+          <div class="sticky-sales-header">
+            <div class="sales-select-box">
+              <label class="form-label font-bold">👤 Pilih Sales Penerima *</label>
+              <select
+                v-model="sendForm.sales_id"
+                class="form-select sales-main-select"
+                @change="onSalesSelectedChange"
+              >
+                <option value="">-- Pilih Sales Penerima --</option>
+                <option v-for="s in salesUsersList" :key="s.id" :value="s.id">
+                  {{ s.full_name || s.username }} ({{ s.branch_id || 'Cabang' }})
+                </option>
+              </select>
+            </div>
 
-          <div class="form-group">
-            <label>Pilih Sales Penerima *</label>
-            <select v-model="sendForm.sales_id" class="form-select" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color)">
-              <option value="">-- Pilih Sales --</option>
-              <option v-for="s in salesUsersList" :key="s.id" :value="s.id">
-                👤 {{ s.full_name || s.username }} ({{ s.branch_id || 'Cabang' }})
-              </option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>Pilih Barang *</label>
-            <select v-model="sendForm.product_id" class="form-select" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color)" @change="onSendProductChange">
-              <option value="">-- Pilih Barang --</option>
-              <option v-for="p in allAdminProducts" :key="p.id" :value="p.id">
-                {{ p.name }} (Stok Gudang: {{ formatNumber(p.stock) }} pcs)
-              </option>
-            </select>
-          </div>
-
-          <div v-if="selectedSendProduct" class="stock-ref-banner" style="background:var(--bg-hover, #f1f5f9);padding:10px;border-radius:8px;margin-bottom:12px;font-size:12px">
-            <div>Stok Gudang Pusat: <strong class="text-primary">{{ formatNumber(selectedSendProduct.stock) }} pcs</strong></div>
-            <div v-if="selectedProductRequestedQty > 0" class="text-warning" style="margin-top:2px">
-              ℹ️ Total permintaan aktif sales ini: <strong>{{ formatNumber(selectedProductRequestedQty) }} pcs</strong> (sebagai referensi)
+            <div v-if="sendForm.sales_id" class="sales-quick-toolbar">
+              <div class="toolbar-info">
+                <span>Total Permintaan Aktif Sales: <strong>{{ formatNumber(totalRequestedForSelectedSales) }} pcs</strong></span>
+              </div>
+              <button
+                type="button"
+                class="btn-auto-fill-req"
+                :disabled="totalRequestedForSelectedSales <= 0"
+                @click="fillItemsFromDemand"
+                title="Isi otomatis semua barang yang diminta sales ini"
+              >
+                ⚡ Isi Sesuai Permintaan
+              </button>
             </div>
           </div>
 
-          <div class="form-group">
-            <label>Jumlah Kirim (pcs) *</label>
-            <input
-              v-model.number="sendForm.qty"
-              type="number"
-              min="1"
-              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color);font-size:16px;font-weight:700"
-              placeholder="Masukkan jumlah kirim..."
-              required
-            />
+          <div v-if="!sendForm.sales_id" class="sales-unselected-notice">
+            <Icon name="info" size="20" />
+            <span>Silakan pilih Sales penerima terlebih dahulu untuk mulai memilih barang yang akan dikirim.</span>
           </div>
 
-          <div class="form-group">
-            <label>Catatan / No Surat Jalan (Opsional)</label>
-            <input v-model="sendForm.note" type="text" placeholder="Contoh: Titipan pengiriman pagi" class="form-input" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border-color)" />
-          </div>
+          <div v-else class="batch-send-main">
+            <!-- 2. PILIH BANYAK BARANG (Pola UI Input Order Sales) -->
+            <div class="batch-product-picker-section">
+              <div class="picker-search-bar">
+                <Icon name="search" size="14" class="search-ic" />
+                <input
+                  v-model="sendSearchQuery"
+                  type="text"
+                  placeholder="Cari nama barang gudang..."
+                  class="picker-search-input"
+                />
+                <button v-if="sendSearchQuery" type="button" class="btn-clear-sm" @click="sendSearchQuery = ''">×</button>
+              </div>
 
-          <button
-            class="btn-save"
-            style="width:100%;margin-top:14px;padding:12px;font-weight:700;border-radius:10px"
-            :disabled="sendStockLoading || !sendForm.sales_id || !sendForm.product_id || !sendForm.qty || sendForm.qty <= 0"
-            @click="submitSendStock"
-          >
-            <Icon name="truck" size="16" v-if="!sendStockLoading" />
-            <span>{{ sendStockLoading ? 'Mengirim...' : 'Kirim Stok Sekarang' }}</span>
-          </button>
+              <!-- Filter Kategori Barang Pengiriman -->
+              <div class="picker-cat-tabs">
+                <button
+                  v-for="cat in sendPickerCategories"
+                  :key="cat"
+                  class="picker-cat-btn"
+                  :class="{ active: sendSelectedCategory === cat }"
+                  @click="sendSelectedCategory = cat"
+                >
+                  {{ cat }}
+                </button>
+              </div>
+
+              <!-- Grid Barang untuk Dipilih Cepat -->
+              <div class="batch-prod-grid">
+                <button
+                  v-for="p in filteredSendPickerProducts"
+                  :key="p.id"
+                  type="button"
+                  class="batch-prod-tile"
+                  :class="{
+                    'is-selected': isProductInSendBatch(p.id),
+                    'is-requested': getDemandQtyForProduct(p.id) > 0,
+                    'is-out-of-stock': (p.stock || 0) <= 0
+                  }"
+                  @click="addProductToSendBatch(p)"
+                >
+                  <span class="tile-icon">📦</span>
+                  <span class="tile-name">{{ p.name }}</span>
+                  <div class="tile-meta">
+                    <span class="tile-stock" :class="{ 'text-danger': (p.stock || 0) <= 0 }">
+                      Gudang: {{ formatNumber(p.stock) }}
+                    </span>
+                    <span v-if="getDemandQtyForProduct(p.id) > 0" class="tile-demand-tag">
+                      Minta: {{ formatNumber(getDemandQtyForProduct(p.id)) }}
+                    </span>
+                  </div>
+                  <span v-if="getSendBatchItemQty(p.id) > 0" class="tile-badge-qty">
+                    {{ getSendBatchItemQty(p.id) }}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 3. DAFTAR BARANG YANG AKAN DIKIRIM (Multi-item dengan Stepper, Referensi & Validasi Per Baris) -->
+            <div class="batch-items-container">
+              <div class="batch-items-header">
+                <strong class="font-bold">Barang Dikirim ({{ sendBatchItems.length }} jenis)</strong>
+                <button
+                  v-if="sendBatchItems.length > 0"
+                  type="button"
+                  class="btn-clear-all-batch"
+                  @click="sendBatchItems = []"
+                >
+                  Kosongkan
+                </button>
+              </div>
+
+              <div v-if="sendBatchItems.length === 0" class="batch-empty-box">
+                <Icon name="package" size="24" />
+                <p>Belum ada barang ditambahkan ke daftar kirim.</p>
+                <small class="text-muted">Klik barang pada daftar di atas atau tekan "Isi Sesuai Permintaan".</small>
+              </div>
+
+              <div v-else class="batch-items-scroll-list">
+                <div
+                  v-for="(it, idx) in sendBatchItems"
+                  :key="it.product_id"
+                  class="batch-item-card"
+                  :class="{ 'has-error': it.qty > it.admin_stock || it.qty <= 0 }"
+                >
+                  <div class="batch-item-head">
+                    <span class="item-name font-bold">{{ it.product_name }}</span>
+                    <button type="button" class="btn-remove-batch-item" @click="sendBatchItems.splice(idx, 1)" title="Hapus">
+                      <Icon name="trash" size="14" />
+                    </button>
+                  </div>
+
+                  <!-- Referensi: Permintaan, Stok Gudang, Stok Sales Saat Ini -->
+                  <div class="batch-item-refs">
+                    <span class="ref-pill">
+                      Permintaan: <strong>{{ formatNumber(it.demand_qty) }} pcs</strong>
+                    </span>
+                    <span class="ref-pill" :class="{ 'ref-warn': it.qty > it.admin_stock }">
+                      Stok Gudang: <strong>{{ formatNumber(it.admin_stock) }} pcs</strong>
+                    </span>
+                    <span class="ref-pill">
+                      Stok Sales: <strong>{{ formatNumber(it.current_sales_stock) }} pcs</strong>
+                    </span>
+                  </div>
+
+                  <!-- Input Qty Kirim Bebas dengan Stepper -->
+                  <div class="batch-item-control-row">
+                    <label class="control-label">Jumlah Kirim:</label>
+                    <div class="batch-stepper">
+                      <button type="button" @click="it.qty = Math.max(0, (parseInt(it.qty, 10) || 0) - 1)">−</button>
+                      <input
+                        v-model.number="it.qty"
+                        type="number"
+                        min="1"
+                        class="batch-qty-input"
+                        @input="it.qty = Math.max(0, parseInt(it.qty, 10) || 0)"
+                      />
+                      <button type="button" @click="it.qty = (parseInt(it.qty, 10) || 0) + 1">+</button>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn-set-demand"
+                      v-if="it.demand_qty > 0"
+                      @click="it.qty = it.demand_qty"
+                      title="Set ke jumlah permintaan"
+                    >
+                      = Minta ({{ it.demand_qty }})
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-set-max"
+                      @click="it.qty = it.admin_stock"
+                      title="Set ke maksimal stok gudang"
+                    >
+                      Max ({{ it.admin_stock }})
+                    </button>
+                  </div>
+
+                  <!-- Validasi Error Per Baris -->
+                  <div v-if="it.qty > it.admin_stock" class="item-row-error">
+                    ⚠️ Melebihi stok gudang (tersedia: {{ formatNumber(it.admin_stock) }} pcs, kurang {{ formatNumber(it.qty - it.admin_stock) }} pcs)
+                  </div>
+                  <div v-else-if="it.qty <= 0" class="item-row-error">
+                    ⚠️ Jumlah kirim minimal 1 pcs
+                  </div>
+                </div>
+              </div>
+
+              <!-- Catatan Pengiriman -->
+              <div class="form-group send-batch-note-box">
+                <label class="form-label">Catatan Pengiriman / No Surat Jalan (Opsional)</label>
+                <input
+                  v-model="sendForm.note"
+                  type="text"
+                  placeholder="Contoh: Titipan pengiriman pagi via kurir A"
+                  class="form-input"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. STICKY SUMMARY & TOMBOL KIRIM SEMUA DI BAWAH -->
+        <div class="sheet-footer batch-send-footer">
+          <div class="batch-summary-info">
+            <span class="summary-kinds">{{ sendBatchItems.length }} Jenis Barang</span>
+            <span class="summary-dot">·</span>
+            <strong class="summary-total-qty">Total: {{ formatNumber(totalBatchSendQty) }} pcs</strong>
+          </div>
+          <div class="batch-footer-actions">
+            <button type="button" class="btn-secondary" @click="showSendStockModal = false">
+              Batal
+            </button>
+            <button
+              type="button"
+              class="btn-primary btn-submit-batch-send"
+              :disabled="sendStockLoading || sendBatchItems.length === 0 || hasBatchValidationErrors || !sendForm.sales_id"
+              @click="submitSendStockBatch"
+            >
+              <Icon name="truck" size="16" />
+              <span>{{ sendStockLoading ? 'Mengirim...' : 'Kirim Semua' }}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -544,76 +712,237 @@ function changePeriod(pKey) {
   fetchProducts();
 }
 
-// State Kirim Stok Bebas ke Sales (B2)
+// State Kirim Stok Batch ke Sales (R1)
 const showSendStockModal = ref(false);
 const sendStockLoading = ref(false);
 const salesUsersList = ref([]);
 const allAdminProducts = ref([]);
+const sendBatchItems = ref([]);
+const sendSearchQuery = ref('');
+const sendSelectedCategory = ref('Semua');
+const salesStocksMap = ref({}); // sales_id -> { product_id: stock }
 const sendForm = ref({
   sales_id: '',
-  product_id: '',
-  qty: 1,
   note: ''
 });
-const activeRequestsList = ref([]);
+const activeRequestsList = ref([]); // [{ sales_id, product_id, qty, product_name }]
 
-const selectedSendProduct = computed(() => {
-  return allAdminProducts.value.find(p => p.id === sendForm.value.product_id) || null;
+const sendPickerCategories = computed(() => {
+  const cats = new Set(['Semua']);
+  allAdminProducts.value.forEach(p => {
+    if (p.category) cats.add(p.category);
+  });
+  return Array.from(cats);
 });
 
-const selectedProductRequestedQty = computed(() => {
-  if (!sendForm.value.sales_id || !sendForm.value.product_id) return 0;
-  const match = activeRequestsList.value.find(r => r.sales_id === sendForm.value.sales_id && r.product_id === sendForm.value.product_id);
+const filteredSendPickerProducts = computed(() => {
+  const q = sendSearchQuery.value.toLowerCase().trim();
+  const cat = sendSelectedCategory.value;
+  return allAdminProducts.value.filter(p => {
+    const matchCat = cat === 'Semua' || p.category === cat;
+    const matchQ = !q || (p.name || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q);
+    return matchCat && matchQ;
+  });
+});
+
+const totalRequestedForSelectedSales = computed(() => {
+  if (!sendForm.value.sales_id) return 0;
+  return activeRequestsList.value
+    .filter(r => r.sales_id === sendForm.value.sales_id)
+    .reduce((sum, r) => sum + (parseInt(r.qty, 10) || 0), 0);
+});
+
+const totalBatchSendQty = computed(() => {
+  return sendBatchItems.value.reduce((sum, it) => sum + (parseInt(it.qty, 10) || 0), 0);
+});
+
+const hasBatchValidationErrors = computed(() => {
+  if (sendBatchItems.value.length === 0) return true;
+  return sendBatchItems.value.some(it => {
+    const q = parseInt(it.qty, 10) || 0;
+    const maxStock = parseInt(it.admin_stock, 10) || 0;
+    return q <= 0 || q > maxStock;
+  });
+});
+
+function getDemandQtyForProduct(productId) {
+  if (!sendForm.value.sales_id) return 0;
+  const match = activeRequestsList.value.find(r => r.sales_id === sendForm.value.sales_id && r.product_id === productId);
   return match ? match.qty : 0;
-});
+}
+
+function getSendBatchItemQty(productId) {
+  const match = sendBatchItems.value.find(it => it.product_id === productId);
+  return match ? match.qty : 0;
+}
+
+function isProductInSendBatch(productId) {
+  return sendBatchItems.value.some(it => it.product_id === productId);
+}
+
+function addProductToSendBatch(product) {
+  const existing = sendBatchItems.value.find(it => it.product_id === product.id);
+  if (existing) {
+    existing.qty = (parseInt(existing.qty, 10) || 0) + 1;
+  } else {
+    const demand = getDemandQtyForProduct(product.id);
+    const adminStock = parseInt(product.stock, 10) || 0;
+    const salesStock = getSalesStockForProduct(sendForm.value.sales_id, product.id);
+    sendBatchItems.value.push({
+      product_id: product.id,
+      product_name: product.name,
+      qty: demand > 0 ? demand : 1,
+      admin_stock: adminStock,
+      demand_qty: demand,
+      current_sales_stock: salesStock
+    });
+  }
+}
+
+function getSalesStockForProduct(salesId, productId) {
+  if (!salesId || !salesStocksMap.value[salesId]) return 0;
+  return salesStocksMap.value[salesId][productId] || 0;
+}
+
+function onSalesSelectedChange() {
+  // Update sales stock dan demand referensi pada barang-barang di batch
+  sendBatchItems.value.forEach(it => {
+    it.demand_qty = getDemandQtyForProduct(it.product_id);
+    it.current_sales_stock = getSalesStockForProduct(sendForm.value.sales_id, it.product_id);
+  });
+}
+
+function fillItemsFromDemand() {
+  if (!sendForm.value.sales_id) return;
+  const demands = activeRequestsList.value.filter(r => r.sales_id === sendForm.value.sales_id && r.qty > 0);
+  if (demands.length === 0) {
+    return appStore.showToast('Tidak ada permintaan aktif dari sales ini', 'info');
+  }
+
+  demands.forEach(d => {
+    const prod = allAdminProducts.value.find(p => p.id === d.product_id);
+    const existing = sendBatchItems.value.find(it => it.product_id === d.product_id);
+    const adminStock = prod ? (parseInt(prod.stock, 10) || 0) : 0;
+    const salesStock = getSalesStockForProduct(sendForm.value.sales_id, d.product_id);
+
+    if (existing) {
+      existing.qty = d.qty;
+      existing.demand_qty = d.qty;
+      existing.admin_stock = adminStock;
+      existing.current_sales_stock = salesStock;
+    } else {
+      sendBatchItems.value.push({
+        product_id: d.product_id,
+        product_name: prod ? prod.name : (d.product_name || 'Barang'),
+        qty: d.qty,
+        admin_stock: adminStock,
+        demand_qty: d.qty,
+        current_sales_stock: salesStock
+      });
+    }
+  });
+
+  appStore.showToast(`Berhasil memuat ${demands.length} barang sesuai permintaan sales`, 'success');
+}
 
 async function openSendStockModal() {
   showSendStockModal.value = true;
-  sendForm.value = { sales_id: '', product_id: '', qty: 1, note: '' };
+  sendForm.value = { sales_id: '', note: '' };
+  sendBatchItems.value = [];
+  sendSearchQuery.value = '';
+  sendSelectedCategory.value = 'Semua';
+
   try {
     const [usersRes, prodRes, ordersRes] = await Promise.all([
       apiFetch('/api/users'),
       apiFetch('/api/products?active=true'),
-      apiFetch('/api/orders?status=Proses&limit=50')
+      apiFetch('/api/orders?status=Proses&limit=100')
     ]);
     salesUsersList.value = (usersRes.data || []).filter(u => u.role === 'sales' && u.active !== false);
     allAdminProducts.value = prodRes.data || [];
 
     // Kumpulkan referensi permintaan aktif per sales & product
-    const reqList = [];
+    const reqMap = new Map();
     (ordersRes.data || []).forEach(o => {
       (o.items || []).forEach(it => {
-        reqList.push({ sales_id: o.sales_id, product_id: it.product_id, qty: parseInt(it.qty, 10) || 0 });
+        const key = `${o.sales_id}_${it.product_id}`;
+        const qty = parseInt(it.qty, 10) || 0;
+        if (reqMap.has(key)) {
+          reqMap.get(key).qty += qty;
+        } else {
+          reqMap.set(key, {
+            sales_id: o.sales_id,
+            product_id: it.product_id,
+            product_name: it.product_name || it.name,
+            qty
+          });
+        }
       });
     });
-    activeRequestsList.value = reqList;
+    activeRequestsList.value = Array.from(reqMap.values());
+
+    // Coba muat data stok sales saat ini jika ada endpoint
+    try {
+      const stockRes = await apiFetch('/api/sales-stock');
+      const sMap = {};
+      (stockRes.data || []).forEach(st => {
+        if (!sMap[st.sales_id]) sMap[st.sales_id] = {};
+        sMap[st.sales_id][st.product_id] = parseInt(st.stock, 10) || 0;
+      });
+      salesStocksMap.value = sMap;
+    } catch (e) {
+      salesStocksMap.value = {};
+    }
   } catch (err) {
     appStore.showToast('Gagal memuat data pengiriman: ' + err.message, 'error');
   }
 }
 
-function onSendProductChange() {
-  if (selectedSendProduct.value && selectedProductRequestedQty.value > 0) {
-    sendForm.value.qty = selectedProductRequestedQty.value;
+async function submitSendStockBatch() {
+  if (!sendForm.value.sales_id) {
+    return appStore.showToast('Pilih sales penerima terlebih dahulu', 'warning');
   }
-}
-
-async function submitSendStock() {
-  if (!sendForm.value.sales_id || !sendForm.value.product_id || !sendForm.value.qty || sendForm.value.qty <= 0) {
-    return appStore.showToast('Lengkapi data pengiriman stok', 'warning');
+  if (sendBatchItems.value.length === 0) {
+    return appStore.showToast('Tambahkan minimal 1 barang untuk dikirim', 'warning');
+  }
+  if (hasBatchValidationErrors.value) {
+    return appStore.showToast('Terdapat kesalahan jumlah kirim pada beberapa barang. Periksa peringatan merah.', 'warning');
   }
 
   sendStockLoading.value = true;
   try {
-    await apiFetch('/api/products/send-stock', {
+    const payload = {
+      sales_id: sendForm.value.sales_id,
+      note: sendForm.value.note || '',
+      items: sendBatchItems.value.map(it => ({
+        product_id: it.product_id,
+        qty: parseInt(it.qty, 10) || 0
+      }))
+    };
+
+    const res = await apiFetch('/api/products/send-stock', {
       method: 'POST',
-      body: JSON.stringify(sendForm.value)
+      body: JSON.stringify(payload)
     });
-    appStore.showToast('Stok berhasil dikirim ke sales!', 'success');
-    showSendStockModal.value = false;
+
+    const totalSent = res.data?.total_qty || totalBatchSendQty.value;
+    const targetSales = salesUsersList.value.find(s => s.id === sendForm.value.sales_id);
+    const sName = targetSales ? (targetSales.full_name || targetSales.username) : 'Sales';
+
+    appStore.showToast(`Berhasil mengirim ${totalSent} pcs barang ke ${sName}!`, 'success');
+    
+    // Tawarkan kirim ke sales lain atau tutup modal
+    if (confirm(`Pengiriman batch berhasil!\nKirim lagi ke sales lain?`)) {
+      sendForm.value.sales_id = '';
+      sendForm.value.note = '';
+      sendBatchItems.value = [];
+    } else {
+      showSendStockModal.value = false;
+    }
+
     await fetchProducts();
   } catch (err) {
-    appStore.showToast('Gagal mengirim stok: ' + err.message, 'error');
+    appStore.showToast('Gagal mengirim stok batch: ' + err.message, 'error');
   } finally {
     sendStockLoading.value = false;
   }
@@ -1691,5 +2020,400 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-main);
+}
+
+/* R1 Batch Send Stock Styles */
+.batch-send-overlay {
+  align-items: center !important;
+  padding: 16px;
+}
+.batch-send-content {
+  max-width: 720px;
+  max-height: 92vh !important;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+.batch-send-content .sheet-head {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+.batch-send-body {
+  overflow-y: auto !important;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+.sticky-sales-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-card, #fff);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sales-main-select {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-color, #cbd5e1);
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--bg-hover, #f8fafc);
+  outline: none;
+}
+.sales-main-select:focus {
+  border-color: #2563eb;
+  background: #fff;
+}
+.sales-quick-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.btn-auto-fill-req {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-auto-fill-req:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sales-unselected-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  padding: 30px 20px;
+  border-radius: 12px;
+  color: #64748b;
+  text-align: center;
+  justify-content: center;
+}
+
+.batch-send-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.batch-product-picker-section {
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--bg-hover, #f8fafc);
+}
+.picker-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.picker-search-bar .search-ic {
+  position: absolute;
+  left: 10px;
+  color: #94a3b8;
+}
+.picker-search-input {
+  width: 100%;
+  padding: 8px 30px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 13px;
+  background: #fff;
+}
+.btn-clear-sm {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.picker-cat-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 10px;
+  padding-bottom: 4px;
+}
+.picker-cat-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.picker-cat-btn.active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+.batch-prod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.batch-prod-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  transition: all 0.15s ease;
+}
+.batch-prod-tile:hover {
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+.batch-prod-tile.is-selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+.batch-prod-tile.is-requested {
+  border-color: #f59e0b;
+}
+.batch-prod-tile.is-out-of-stock {
+  opacity: 0.6;
+}
+.tile-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-top: 4px;
+  line-height: 1.2;
+}
+.tile-meta {
+  font-size: 10.5px;
+  color: #64748b;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tile-demand-tag {
+  color: #b45309;
+  font-weight: 700;
+}
+.tile-badge-qty {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.batch-items-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.batch-items-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.btn-clear-all-batch {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.batch-empty-box {
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  color: #94a3b8;
+}
+.batch-items-scroll-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.batch-item-card {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease;
+}
+.batch-item-card.has-error {
+  border-color: #ef4444;
+  background: #fffafa;
+}
+.batch-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.btn-remove-batch-item {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+}
+.btn-remove-batch-item:hover {
+  color: #ef4444;
+}
+.batch-item-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ref-pill {
+  font-size: 11px;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.ref-pill.ref-warn {
+  color: #dc2626;
+  background: #fee2e2;
+  font-weight: 700;
+}
+.batch-item-control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.control-label {
+  font-size: 12px;
+  color: #334155;
+  font-weight: 600;
+}
+.batch-stepper {
+  display: inline-flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+.batch-stepper button {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #f1f5f9;
+  cursor: pointer;
+  font-weight: 700;
+}
+.batch-qty-input {
+  width: 50px;
+  height: 28px;
+  border: none;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+.btn-set-demand, .btn-set-max {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  cursor: pointer;
+}
+.btn-set-demand {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #b45309;
+}
+.item-row-error {
+  font-size: 11px;
+  font-weight: 600;
+  color: #dc2626;
+  margin-top: 2px;
+}
+
+.batch-send-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: var(--bg-card, #fff);
+  border-top: 1px solid var(--border-color, #e2e8f0);
+  padding: 14px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.batch-summary-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.summary-kinds {
+  color: #64748b;
+}
+.summary-total-qty {
+  font-size: 15px;
+  color: #0f172a;
+}
+.batch-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-submit-batch-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  font-weight: 700;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
 }
 </style>

@@ -8,7 +8,8 @@ test('CR_CONFIG defaults verification', () => {
   assert.equal(CR_CONFIG.STATUS_TRANSACTED, 'Sudah Jadi Transaksi');
   assert.equal(CR_CONFIG.STATUS_INITIAL, 'Proses');
   assert.equal(CR_CONFIG.ALLOW_NEGATIVE_ADMIN_STOCK, false);
-  assert.equal(CR_CONFIG.DEFAULT_NAMA_PEMESAN, '-');
+  assert.equal(CR_CONFIG.DEFAULT_NAMA_PELANGGAN, 'Tanpa Nama');
+  assert.equal(CR_CONFIG.ONE_ORDER_PER_CUSTOMER, true);
 });
 
 test('Skenario 1: Rekap akumulasi permintaan dan rincian pemesan', () => {
@@ -173,5 +174,101 @@ test('Skenario 7: Monitoring stok sales: Diminta, Dikirim, Laku, Sisa Stok', () 
 
   const sisaStok = shipped - sold;
   assert.equal(sisaStok, 5, 'Sisa stok harus Dikirim - Laku = 5 (bukan dari diminta)');
+});
+
+test('REVISI CR #2 - R1: Pengiriman Stok Batch (Multi-Item) & Validasi Per Baris', () => {
+  const warehouseStock = {
+    prod1: 20,
+    prod2: 10,
+    prod3: 5
+  };
+
+  const batchPayload = [
+    { product_id: 'prod1', qty: 5 },
+    { product_id: 'prod2', qty: 10 },
+    { product_id: 'prod3', qty: 8 } // Melebihi stok gudang (5)
+  ];
+
+  const rowErrors = [];
+  const validItems = [];
+
+  for (const it of batchPayload) {
+    const stockAvailable = warehouseStock[it.product_id] || 0;
+    if (it.qty <= 0) {
+      rowErrors.push({ product_id: it.product_id, error: 'Jumlah kirim minimal 1' });
+    } else if (it.qty > stockAvailable) {
+      rowErrors.push({
+        product_id: it.product_id,
+        error: `Melebihi stok gudang (tersedia: ${stockAvailable}, diminta kirim: ${it.qty})`
+      });
+    } else {
+      validItems.push(it);
+    }
+  }
+
+  assert.equal(rowErrors.length, 1, 'Harus ada 1 error pada prod3');
+  assert.equal(rowErrors[0].product_id, 'prod3');
+  assert.equal(validItems.length, 2, 'prod1 dan prod2 valid');
+
+  // Jika prod3 diperbaiki jadi 5
+  batchPayload[2].qty = 5;
+  const totalSent = batchPayload.reduce((s, it) => s + it.qty, 0);
+  assert.equal(totalSent, 20, 'Total batch kirim adalah 5 + 10 + 5 = 20');
+});
+
+test('REVISI CR #2 - R2: Nama Pelanggan Header Order & Gabungkan (Merge) Order Pelanggan', () => {
+  const customerBudi = { id: 'cust-1', name: 'Budi' };
+
+  const order1 = {
+    id: 'ord-101',
+    order_no: 'STK-101',
+    customer_id: customerBudi.id,
+    nama_pelanggan: customerBudi.name,
+    status: 'Proses',
+    items: [
+      { product_id: 'p1', product_name: 'Bakso Candi Mini', qty: 5 }
+    ]
+  };
+
+  const order2 = {
+    id: 'ord-102',
+    order_no: 'STK-102',
+    customer_id: customerBudi.id,
+    nama_pelanggan: customerBudi.name,
+    status: 'Proses',
+    items: [
+      { product_id: 'p1', product_name: 'Bakso Candi Mini', qty: 10 },
+      { product_id: 'p2', product_name: 'Sosis Ayam', qty: 3 }
+    ]
+  };
+
+  // 1. Verifikasi judul kartu utama menggunakan nama_pelanggan
+  assert.equal(order1.nama_pelanggan, 'Budi');
+  assert.equal(order2.nama_pelanggan, 'Budi');
+
+  // 2. Simulasi pencarian instan nama pelanggan
+  const orders = [order1, order2, { id: 'ord-103', nama_pelanggan: 'Sri' }];
+  const query = 'bud';
+  const searchResults = orders.filter(o => o.nama_pelanggan.toLowerCase().includes(query.toLowerCase()));
+  assert.equal(searchResults.length, 2, 'Pencarian bud harus cocok 2 order');
+
+  // 3. Simulasi merge / gabungkan order Budi
+  const selectedOrders = [order1, order2];
+  const combinedItemsMap = new Map();
+
+  for (const ord of selectedOrders) {
+    for (const it of ord.items) {
+      if (combinedItemsMap.has(it.product_id)) {
+        combinedItemsMap.get(it.product_id).qty += it.qty;
+      } else {
+        combinedItemsMap.set(it.product_id, { ...it });
+      }
+    }
+  }
+
+  const mergedItems = Array.from(combinedItemsMap.values());
+  assert.equal(mergedItems.length, 2, 'Harus ada 2 jenis produk hasil gabungan');
+  assert.equal(mergedItems.find(i => i.product_id === 'p1').qty, 15, 'Bakso Candi Mini total 5 + 10 = 15');
+  assert.equal(mergedItems.find(i => i.product_id === 'p2').qty, 3, 'Sosis Ayam total 3');
 });
 

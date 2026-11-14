@@ -2,10 +2,32 @@
   <div class="req-page">
     <div class="card req-card">
       <div class="section-title">Permintaan Barang ke Admin</div>
-      <p class="hint">Pilih barang & jumlah yang ingin diminta. Setelah admin mengirim, stok akan masuk ke <strong>Stok Saya</strong>.</p>
+      <p class="hint">Pilih nama pelanggan dan barang yang ingin dipesan. Pesanan ini akan langsung tampil di laporan admin.</p>
+      
+      <!-- Field Nama Pelanggan di tingkat Header Order (R2) -->
+      <div class="form-group mb-12">
+        <label class="form-label font-bold">Nama Pelanggan <span class="text-danger">*</span></label>
+        <div class="customer-input-wrap">
+          <input
+            v-model="customerName"
+            list="customer-suggestions"
+            type="text"
+            class="input-customer-header"
+            placeholder="Ketik atau pilih nama pelanggan (misal: Budi / Bu Sri)..."
+            required
+            @input="onCustomerInput"
+          />
+        </div>
+        <datalist id="customer-suggestions">
+          <option v-for="c in existingCustomers" :key="c.id" :value="c.name">
+            {{ c.phone ? `${c.name} (${c.phone})` : c.name }}
+          </option>
+        </datalist>
+      </div>
+
       <div class="form-group">
-        <label>Catatan (Opsional)</label>
-        <input v-model="note" type="text" placeholder="Contoh: Untuk kebutuhan minggu depan" />
+        <label>Catatan Order (Opsional)</label>
+        <input v-model="note" type="text" placeholder="Contoh: Kebutuhan acara hajatan / minggu depan" />
       </div>
     </div>
 
@@ -35,7 +57,7 @@
     </div>
 
     <div class="card req-card">
-      <div class="section-title">Daftar Permintaan ({{ formatNumber(items.length) }})</div>
+      <div class="section-title">Daftar Barang ({{ formatNumber(items.length) }} jenis)</div>
       <div v-if="items.length === 0" class="empty">Belum ada barang dipilih.</div>
       <div v-for="(it, idx) in items" :key="idx" class="req-item-block" :class="{ warn: it.qty > it.stock }">
         <div class="req-row">
@@ -59,21 +81,11 @@
             <button type="button" class="btn-remove-row" @click="removeRow(idx)" title="Hapus baris">×</button>
           </div>
         </div>
-        <div class="customer-name-row">
-          <label class="customer-label">Nama Pemesan / Catatan <span class="text-danger">*</span></label>
-          <input
-            v-model="it.nama_pemesan"
-            type="text"
-            class="input-customer-name"
-            placeholder="Contoh: Bu Sri / Adam / Warung Berkah"
-            required
-          />
-        </div>
       </div>
 
       <button class="btn-submit" :disabled="loading || items.length === 0" @click="submit">
         <Icon name="check" size="18" />
-        <span>{{ loading ? 'Mengirim...' : `Kirim Permintaan (${formatNumber(totalQty)} item)` }}</span>
+        <span>{{ loading ? 'Mengirim...' : `Simpan Pesanan (${formatNumber(totalQty)} pcs)` }}</span>
       </button>
     </div>
   </div>
@@ -91,6 +103,9 @@ import { formatNumber } from '../utils/format.js';
 const router = useRouter();
 const appStore = useAppStore();
 
+const customerName = ref('');
+const selectedCustomerId = ref('');
+const existingCustomers = ref([]);
 const products = ref([]);
 const items = ref([]);
 const note = ref('');
@@ -106,18 +121,27 @@ const filteredProducts = computed(() => {
 });
 const totalQty = computed(() => items.value.reduce((s, i) => s + (parseInt(i.qty, 10) || 0), 0));
 
+function onCustomerInput() {
+  const match = existingCustomers.value.find(c => c.name.toLowerCase() === customerName.value.trim().toLowerCase());
+  selectedCustomerId.value = match ? match.id : '';
+}
+
 function qtyOf(id) {
   return items.value.filter(i => i.product_id === id).reduce((s, it) => s + (parseInt(it.qty, 10) || 0), 0);
 }
 function inc(p) {
-  items.value.push({
-    product_id: p.id,
-    name: p.name,
-    emoji: p.emoji || '📦',
-    stock: parseInt(p.stock, 10) || 0,
-    qty: 1,
-    nama_pemesan: ''
-  });
+  const ex = items.value.find(i => i.product_id === p.id);
+  if (ex) {
+    ex.qty++;
+  } else {
+    items.value.push({
+      product_id: p.id,
+      name: p.name,
+      emoji: p.emoji || '📦',
+      stock: parseInt(p.stock, 10) || 0,
+      qty: 1
+    });
+  }
 }
 function dec(idx) {
   if (items.value[idx].qty > 1) items.value[idx].qty--;
@@ -127,10 +151,14 @@ function removeRow(idx) {
   items.value.splice(idx, 1);
 }
 
-async function loadProducts() {
+async function loadInitialData() {
   try {
-    const res = await apiFetch('/api/products');
-    products.value = res.data || [];
+    const [prodRes, custRes] = await Promise.all([
+      apiFetch('/api/products'),
+      apiFetch('/api/customers').catch(() => ({ data: [] }))
+    ]);
+    products.value = prodRes.data || [];
+    existingCustomers.value = (custRes.data || []).filter(c => c.active !== false);
     if (products.value.length) await cacheProducts(products.value);
   } catch (e) {
     products.value = (await getCachedProducts()) || [];
@@ -140,14 +168,13 @@ async function loadProducts() {
 }
 
 async function submit() {
+  const custName = customerName.value.trim();
+  if (!custName) {
+    return appStore.showToast('Nama pelanggan wajib diisi', 'warning');
+  }
+
   const valid = items.value.filter(i => i.qty > 0);
   if (!valid.length) return appStore.showToast('Minimal pilih 1 barang', 'warning');
-
-  // Validasi A1: Field Nama Pemesan / Catatan wajib diisi per item
-  const emptyPemesan = valid.find(i => !i.nama_pemesan || !String(i.nama_pemesan).trim());
-  if (emptyPemesan) {
-    return appStore.showToast(`Nama pemesan untuk barang "${emptyPemesan.name}" wajib diisi`, 'warning');
-  }
 
   loading.value = true;
   const clientKey = crypto.randomUUID();
@@ -156,16 +183,18 @@ async function submit() {
       method: 'POST',
       headers: { 'Idempotency-Key': clientKey },
       body: JSON.stringify({
+        nama_pelanggan: custName,
+        customer_id: selectedCustomerId.value || undefined,
         note: note.value,
         client_key: clientKey,
         items: valid.map(i => ({
           product_id: i.product_id,
           qty: parseInt(i.qty, 10),
-          nama_pemesan: i.nama_pemesan.trim()
+          nama_pemesan: custName
         }))
       })
     });
-    appStore.showToast('Pesanan berhasil dicatat & dikirim ke admin', 'success');
+    appStore.showToast(`Pesanan atas nama "${custName}" berhasil dicatat`, 'success');
     router.push('/orders');
   } catch (err) {
     appStore.showToast(`Gagal mengirim: ${err.message}`, 'error');
@@ -174,7 +203,7 @@ async function submit() {
   }
 }
 
-onMounted(loadProducts);
+onMounted(loadInitialData);
 </script>
 
 <style scoped>
@@ -205,9 +234,20 @@ onMounted(loadProducts);
 .qty-ctrl button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border, #ddd); background: transparent; font-size: 18px; cursor: pointer; }
 .qty-ctrl input { width: 56px; text-align: center; }
 .btn-remove-row { color: var(--danger, #ef4444); border-color: rgba(239, 68, 68, 0.3) !important; font-size: 18px; }
-.customer-name-row { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
-.customer-label { font-size: 12px; font-weight: 600; color: var(--text-muted, #666); }
-.input-customer-name { width: 100%; font-size: 13px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border, #ccc); }
+.customer-input-wrap {
+  width: 100%;
+}
+.input-customer-header {
+  width: 100%;
+  padding: 11px 13px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1.5px solid var(--primary, #2563eb);
+  background: var(--bg-card, #fff);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
 .btn-submit { margin-top: 14px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border: none; border-radius: 12px; background: linear-gradient(135deg, var(--primary, #2563eb), #4f46e5); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
 .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
 </style>

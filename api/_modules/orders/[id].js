@@ -9,6 +9,8 @@ import { CR_CONFIG } from '../_lib/config.js';
 
 const editOrderSchema = z.object({
   note: z.string().optional(),
+  customer_id: z.string().optional(),
+  nama_pelanggan: z.string().optional(),
   customer_name: z.string().optional(),
   customer_phone: z.string().optional(),
   status: z.string().optional(),
@@ -16,11 +18,11 @@ const editOrderSchema = z.object({
     id: z.string().optional(),
     product_id: z.string().min(1),
     qty: z.coerce.number().int().positive('Qty harus positif'),
-    nama_pemesan: z.string().optional().default(CR_CONFIG.DEFAULT_NAMA_PEMESAN)
+    nama_pemesan: z.string().optional().default(CR_CONFIG.DEFAULT_NAMA_PELANGGAN)
   })).min(1, 'Minimal 1 barang').optional()
 });
 
-const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by', 'deleted_at', 'deleted_by'];
+const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'customer_id', 'nama_pelanggan', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by', 'deleted_at', 'deleted_by'];
 const CUST_HEADERS = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
 const ORDER_ITEM_HEADERS = ['id', 'order_id', 'product_id', 'name', 'qty', 'nama_pemesan', 'shortage', 'qty_shipped', 'deleted_at'];
 
@@ -81,8 +83,14 @@ export default async function handler(req, res) {
       const totalQty = mappedItems.reduce((sum, it) => sum + it.qty, 0);
       const totalShippedQty = mappedItems.reduce((sum, it) => sum + (it.qty_shipped !== null ? it.qty_shipped : 0), 0);
 
+      const firstItemPemesan = mappedItems.find(it => it.nama_pemesan && it.nama_pemesan !== '-' && it.nama_pemesan !== 'Tanpa Nama')?.nama_pemesan;
+      const resolvedNamaPelanggan = (order.nama_pelanggan && order.nama_pelanggan.trim())
+        ? order.nama_pelanggan.trim()
+        : (firstItemPemesan || customer?.name || CR_CONFIG.DEFAULT_NAMA_PELANGGAN);
+
       const enriched = {
         ...order,
+        nama_pelanggan: resolvedNamaPelanggan,
         customer,
         customer_phone: customer ? customer.phone : '',
         sales_name: sales ? sales.full_name : '-',
@@ -176,9 +184,22 @@ export default async function handler(req, res) {
         }
       }
 
-      // 2. Update catatan order jika ada
+      // 2. Update catatan & nama pelanggan order jika ada
+      let orderChanged = false;
       if (data.note !== undefined && order._rowIndex) {
         order.note = data.note;
+        orderChanged = true;
+      }
+      if (data.nama_pelanggan !== undefined && order._rowIndex) {
+        order.nama_pelanggan = data.nama_pelanggan;
+        orderChanged = true;
+      }
+      if (data.customer_id !== undefined && order._rowIndex) {
+        order.customer_id = data.customer_id;
+        orderChanged = true;
+      }
+      if (orderChanged && order._rowIndex) {
+        order.updated_at = new Date().toISOString();
         await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
       }
 

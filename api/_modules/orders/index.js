@@ -8,15 +8,17 @@ import { checkIdempotency, saveIdempotency } from '../_lib/idempotency.js';
 import { handleApiError, ApiError } from '../_lib/errors.js';
 import { CR_CONFIG } from '../_lib/config.js';
 
-// Schema order item: wajib nama_pemesan, product_id, qty
+// Schema order item: product_id, qty, dan nama_pemesan (opsional untuk backward compatibility)
 const orderItemSchema = z.object({
   product_id: z.string().min(1, 'ID barang wajib diisi'),
   qty: z.number().int().positive('Qty harus berupa angka bulat positif'),
-  nama_pemesan: z.string().min(1, 'Nama pemesan wajib diisi').default(CR_CONFIG.DEFAULT_NAMA_PEMESAN),
+  nama_pemesan: z.string().optional().default(CR_CONFIG.DEFAULT_NAMA_PELANGGAN),
 });
 
 const createOrderSchema = z.object({
   branch_id: z.string().optional(),
+  customer_id: z.string().optional(),
+  nama_pelanggan: z.string().min(1, 'Nama pelanggan wajib diisi').default(CR_CONFIG.DEFAULT_NAMA_PELANGGAN),
   note: z.string().optional().default(''),
   client_key: z.string().optional(),
   items: z.array(orderItemSchema).min(1, 'Minimal pilih 1 barang'),
@@ -90,7 +92,7 @@ export default async function handler(req, res) {
             : (o.status === 'Dikirim' ? requestedQty : null);
           return {
             ...oi,
-            nama_pemesan: oi.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
+            nama_pemesan: oi.nama_pemesan || o.nama_pelanggan || CR_CONFIG.DEFAULT_NAMA_PELANGGAN,
             product_name: prod ? prod.name : oi.name,
             admin_stock: parseInt(prod?.stock || 0, 10),
             qty: requestedQty,
@@ -104,8 +106,15 @@ export default async function handler(req, res) {
 
         const hasCorrection = items.some(it => it.qty_shipped !== null && it.qty_shipped !== undefined && it.qty_shipped !== it.qty);
 
+        // R2: Nama pelanggan di tingkat header order (fallback ke item pertama atau default)
+        const firstItemPemesan = items.find(it => it.nama_pemesan && it.nama_pemesan !== '-' && it.nama_pemesan !== 'Tanpa Nama')?.nama_pemesan;
+        const resolvedNamaPelanggan = (o.nama_pelanggan && o.nama_pelanggan.trim())
+          ? o.nama_pelanggan.trim()
+          : (firstItemPemesan || o.customer_name || CR_CONFIG.DEFAULT_NAMA_PELANGGAN);
+
         return {
           ...o,
+          nama_pelanggan: resolvedNamaPelanggan,
           sales_name: sales ? sales.full_name : '-',
           total_qty: totalQty,
           total_qty_shipped: o.status === 'Dikirim' ? totalShippedQty : null,
@@ -117,12 +126,13 @@ export default async function handler(req, res) {
         };
       });
 
-      // Filter search
+      // Filter search: cari nomor order, sales_name, nama_pelanggan
       let filtered = enrichedOrders;
       if (search) {
         filtered = enrichedOrders.filter(o =>
           (o.order_no && o.order_no.toLowerCase().includes(search)) ||
           (o.sales_name && o.sales_name.toLowerCase().includes(search)) ||
+          (o.nama_pelanggan && o.nama_pelanggan.toLowerCase().includes(search)) ||
           (o.items && o.items.some(it => (it.nama_pemesan && it.nama_pemesan.toLowerCase().includes(search))))
         );
       }
@@ -161,7 +171,8 @@ export default async function handler(req, res) {
             order_id: po.id,
             order_no: po.order_no,
             sales_name: po.sales_name,
-            nama_pemesan: it.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
+            nama_pelanggan: po.nama_pelanggan || it.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PELANGGAN,
+            nama_pemesan: po.nama_pelanggan || it.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PELANGGAN,
             qty,
             date: po.order_date || po.created_at || '-'
           });
@@ -235,6 +246,8 @@ export default async function handler(req, res) {
           order_time: timeStr,
           sales_id: authUser.id,
           branch_id: branchId || '',
+          customer_id: data.customer_id || '',
+          nama_pelanggan: data.nama_pelanggan || CR_CONFIG.DEFAULT_NAMA_PELANGGAN,
           status: CR_CONFIG.STATUS_INITIAL,
           note: data.note || '',
           type: 'STOCK_REQUEST',
@@ -242,7 +255,7 @@ export default async function handler(req, res) {
           created_at: now.toISOString()
         };
 
-        const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at'];
+        const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'customer_id', 'nama_pelanggan', 'status', 'note', 'type', 'client_key', 'created_at'];
         await appendRow('Orders', newOrder, ORDER_HEADERS);
 
         const ORDER_ITEM_HEADERS = ['id', 'order_id', 'product_id', 'name', 'qty', 'nama_pemesan', 'shortage', 'qty_shipped'];
@@ -253,7 +266,7 @@ export default async function handler(req, res) {
             product_id: it.product_id,
             name: '',
             qty: it.qty,
-            nama_pemesan: it.nama_pemesan || CR_CONFIG.DEFAULT_NAMA_PEMESAN,
+            nama_pemesan: it.nama_pemesan || data.nama_pelanggan || CR_CONFIG.DEFAULT_NAMA_PELANGGAN,
             shortage: 0,
             qty_shipped: ''
           }, ORDER_ITEM_HEADERS);

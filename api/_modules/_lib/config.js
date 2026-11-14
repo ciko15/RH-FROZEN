@@ -1,5 +1,5 @@
 /**
- * Konfigurasi Default Alur Pesanan, Permintaan & Stok
+ * Konfigurasi Default Alur Pesanan, Permintaan & Stok (CR #1 & CR #2)
  * Seluruh asumsi dipusatkan di sini agar mudah disesuaikan bila ada perubahan kebijakan.
  */
 export const CR_CONFIG = {
@@ -21,7 +21,12 @@ export const CR_CONFIG = {
   // 6. Stok gudang pusat (Products.stock) tidak boleh minus saat admin kirim stok
   ALLOW_NEGATIVE_ADMIN_STOCK: false,
 
-  // 7. Nilai default nama pemesan untuk data lama / kosong
-  DEFAULT_NAMA_PEMESAN: '-'
+  // 7. Nilai default nama pemesan / nama pelanggan untuk data lama / kosong
+  DEFAULT_NAMA_PEMESAN: 'Tanpa Nama',
+  DEFAULT_NAMA_PELANGGAN: 'Tanpa Nama',
+
+  // 8. R2: Satu order = satu pelanggan
+  ONE_ORDER_PER_CUSTOMER: true
 };
+
 

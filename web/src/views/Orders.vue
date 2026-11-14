@@ -6,7 +6,7 @@
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="Cari nomor permintaan / sales..."
+          placeholder="Cari nama pelanggan / nomor pesanan..."
           class="search-input"
         />
         <button v-if="searchQuery" class="clear-btn" @click="searchQuery = ''" title="Hapus pencarian">
@@ -17,6 +17,18 @@
         <Icon name="plus" size="16" />
         <span>Minta Barang</span>
       </router-link>
+    </div>
+
+    <!-- Opsi Gabung Order (R2: jika ada 2+ order pelanggan yang dipilih) -->
+    <div v-if="isSales && selectedOrderIds.length > 1" class="batch-merge-bar">
+      <div class="batch-merge-info">
+        <Icon name="layers" size="16" />
+        <span><strong>{{ selectedOrderIds.length }} pesanan dipilih</strong> ({{ selectedMergeCustomerName || 'Pelanggan' }})</span>
+      </div>
+      <button type="button" class="btn-merge-action" @click="proceedMergeOrdersToSalesPos">
+        <Icon name="cart" size="15" />
+        <span>Gabungkan jadi 1 Transaksi</span>
+      </button>
     </div>
 
     <div class="status-tabs">
@@ -94,9 +106,36 @@
     </div>
 
     <div v-else class="order-list">
-      <div v-for="o in filteredOrders" :key="o.id" class="card order-card" @click="selected = o">
-        <div class="order-top">
-          <span class="order-no"><Icon name="package" size="14" /> {{ o.order_no }}</span>
+      <div
+        v-for="o in filteredOrders"
+        :key="o.id"
+        class="card order-card"
+        :class="{ 'card-selected-merge': isOrderCheckedForMerge(o.id) }"
+        @click="selected = o"
+      >
+        <div class="order-card-header-row">
+          <!-- Checkbox gabung order jika sales dan belum transaksi -->
+          <div
+            v-if="isSales && o.status !== 'Sudah Jadi Transaksi'"
+            class="order-merge-check"
+            @click.stop="toggleOrderMergeCheck(o)"
+          >
+            <input
+              type="checkbox"
+              :checked="isOrderCheckedForMerge(o.id)"
+              @click.stop="toggleOrderMergeCheck(o)"
+            />
+          </div>
+
+          <div class="order-title-block">
+            <!-- NAMA PELANGGAN SEBAGAI JUDUL UTAMA (R2) -->
+            <div class="order-customer-title">
+              <span class="cust-prefix">👤</span>
+              <strong class="cust-name-text">{{ o.nama_pelanggan || 'Tanpa Nama' }}</strong>
+            </div>
+            <span class="order-no-sub"><Icon name="package" size="13" /> {{ o.order_no }}</span>
+          </div>
+
           <div class="order-badges">
             <span v-if="o.has_correction" class="badge badge-koreksi" title="Ada penyesuaian jumlah kirim">
               ⚠️ Ada Koreksi
@@ -104,17 +143,34 @@
             <span class="badge" :class="badgeClass(o.status)">{{ o.status }}</span>
           </div>
         </div>
-        <div class="order-sales">👤 {{ o.sales_name }}</div>
+
+        <!-- Ringkasan Barang yang Dipesan -->
+        <div class="order-items-preview">
+          <span v-for="(it, idx) in o.items.slice(0, 3)" :key="it.id || idx" class="item-preview-pill">
+            {{ it.product_name || it.name }}: <strong>{{ formatNumber(it.qty) }} pcs</strong>
+          </span>
+          <span v-if="o.items.length > 3" class="item-preview-more">
+            +{{ o.items.length - 3 }} lainnya
+          </span>
+        </div>
+
+        <div v-if="isAdmin" class="order-sales">Sales: 👤 {{ o.sales_name }}</div>
         <div v-if="o.shortage_total > 0 && o.status === 'Proses'" class="shortage">⚠️ Stok admin kurang {{ formatNumber(o.shortage_total) }} pcs ({{ formatNumber(o.shortage_items) }} barang)</div>
+
         <div class="order-bottom">
-          <span>{{ o.order_date }} {{ o.order_time }}</span>
-          <div class="order-qty-info">
-            <template v-if="o.status === 'Dikirim' && o.total_qty_shipped !== null && o.total_qty_shipped !== undefined">
-              <span class="qty-compare-badge" :class="{ 'partial-badge': o.total_qty_shipped !== o.total_qty }">
-                Minta: <strong>{{ formatNumber(o.total_qty) }}</strong> | Dikirim: <strong>{{ formatNumber(o.total_qty_shipped) }}</strong> pcs
-              </span>
-            </template>
-            <strong v-else>{{ formatNumber(o.total_qty) }} pcs · {{ formatNumber(o.items_count) }} barang</strong>
+          <span class="order-date-text">{{ o.order_date }} {{ o.order_time }}</span>
+          <div class="order-bottom-right">
+            <strong class="order-total-sum">{{ formatNumber(o.total_qty) }} pcs</strong>
+            <!-- Tombol Cepat Jadikan Transaksi langsung dari kartu (R2) -->
+            <button
+              v-if="isSales && o.status !== 'Sudah Jadi Transaksi'"
+              type="button"
+              class="btn-quick-sale"
+              @click.stop="proceedSingleOrderToSaleDirect(o)"
+              title="Jadikan Transaksi sekarang"
+            >
+              <Icon name="cart" size="13" /> Jadikan Transaksi
+            </button>
           </div>
         </div>
       </div>
@@ -614,8 +670,130 @@ const filteredOrders = computed(() => {
   const q = searchQuery.value.toLowerCase().trim();
   return orders.value
     .filter(o => currentTab.value === 'Semua' || o.status === currentTab.value)
-    .filter(o => !q || (o.order_no || '').toLowerCase().includes(q) || (o.sales_name || '').toLowerCase().includes(q) || (o.items && o.items.some(it => (it.nama_pemesan || '').toLowerCase().includes(q))));
+    .filter(o => {
+      if (!q) return true;
+      const orderNoMatch = (o.order_no || '').toLowerCase().includes(q);
+      const salesMatch = (o.sales_name || '').toLowerCase().includes(q);
+      const custMatch = (o.nama_pelanggan || '').toLowerCase().includes(q);
+      const itemsMatch = o.items && o.items.some(it => (it.nama_pemesan || '').toLowerCase().includes(q) || (it.product_name || it.name || '').toLowerCase().includes(q));
+      return orderNoMatch || salesMatch || custMatch || itemsMatch;
+    });
 });
+
+// Fitur Merge / Gabungkan Order Pelanggan (R2)
+const selectedOrderIds = ref([]);
+
+function isOrderCheckedForMerge(orderId) {
+  return selectedOrderIds.value.includes(orderId);
+}
+
+const selectedMergeCustomerName = computed(() => {
+  if (selectedOrderIds.value.length === 0) return '';
+  const firstOrder = orders.value.find(o => o.id === selectedOrderIds.value[0]);
+  return firstOrder ? (firstOrder.nama_pelanggan || 'Tanpa Nama') : '';
+});
+
+function toggleOrderMergeCheck(order) {
+  const idx = selectedOrderIds.value.indexOf(order.id);
+  if (idx > -1) {
+    selectedOrderIds.value.splice(idx, 1);
+  } else {
+    // Validasi agar hanya menggabungkan order dari pelanggan yang sama
+    if (selectedOrderIds.value.length > 0) {
+      const currentCust = selectedMergeCustomerName.value;
+      const targetCust = order.nama_pelanggan || 'Tanpa Nama';
+      if (currentCust.toLowerCase() !== targetCust.toLowerCase()) {
+        appStore.showToast(`Hanya dapat menggabungkan order dari pelanggan yang sama (${currentCust})`, 'warning');
+        return;
+      }
+    }
+    selectedOrderIds.value.push(order.id);
+  }
+}
+
+function proceedMergeOrdersToSalesPos() {
+  if (selectedOrderIds.value.length === 0) return;
+  const selectedObjs = orders.value.filter(o => selectedOrderIds.value.includes(o.id));
+  if (selectedObjs.length === 0) return;
+
+  const custName = selectedObjs[0].nama_pelanggan || 'Tanpa Nama';
+  const custId = selectedObjs[0].customer_id || '';
+
+  // Gabungkan semua item dari order yang dicentang
+  const combinedMap = new Map();
+  selectedObjs.forEach(ord => {
+    (ord.items || []).forEach(it => {
+      const pid = it.product_id;
+      const pName = it.product_name || it.name;
+      const qty = parseInt(it.qty, 10) || 0;
+      if (qty <= 0) return;
+      if (combinedMap.has(pid)) {
+        combinedMap.get(pid).qty += qty;
+      } else {
+        combinedMap.set(pid, {
+          product_id: pid,
+          product_name: pName,
+          qty
+        });
+      }
+    });
+  });
+
+  const mergedItems = Array.from(combinedMap.values());
+  if (mergedItems.length === 0) {
+    return appStore.showToast('Tidak ada barang dari order terpilih untuk digabungkan', 'warning');
+  }
+
+  const payload = {
+    order_id: selectedObjs.map(o => o.id).join(','),
+    order_no: selectedObjs.map(o => o.order_no).join(', '),
+    customer_id: custId,
+    customer_name: custName,
+    items: mergedItems
+  };
+
+  try {
+    sessionStorage.setItem('rh_order_to_tx', JSON.stringify(payload));
+  } catch (err) {
+    console.warn('Gagal menyimpan sesi order_to_tx:', err);
+  }
+
+  selectedOrderIds.value = [];
+  appStore.showToast(`Menggabungkan ${selectedObjs.length} order untuk ${custName}...`, 'info');
+  router.push('/sales?from_order=true');
+}
+
+function proceedSingleOrderToSaleDirect(ord) {
+  if (!ord || ord.status === 'Sudah Jadi Transaksi') return;
+  const itemsToTransfer = (ord.items || [])
+    .map(it => ({
+      product_id: it.product_id,
+      product_name: it.product_name || it.name,
+      qty: parseInt(it.qty, 10) || 1
+    }))
+    .filter(it => it.qty > 0);
+
+  if (itemsToTransfer.length === 0) {
+    return appStore.showToast('Tidak ada barang dalam pesanan ini untuk ditransaksikan', 'warning');
+  }
+
+  const payload = {
+    order_id: ord.id,
+    order_no: ord.order_no,
+    customer_id: ord.customer_id || '',
+    customer_name: ord.nama_pelanggan || '',
+    items: itemsToTransfer
+  };
+
+  try {
+    sessionStorage.setItem('rh_order_to_tx', JSON.stringify(payload));
+  } catch (err) {
+    console.warn('Gagal menyimpan sesi order_to_tx:', err);
+  }
+
+  appStore.showToast(`Memindahkan pesanan ${ord.nama_pelanggan || ord.order_no} ke Kasir...`, 'info');
+  router.push('/sales?from_order=true');
+}
 
 const canShip = computed(() => false); // Alur lama konfirmasi dihapus
 const canCancel = computed(() => selected.value?.status === 'Proses' && (isAdmin.value || isSales.value));
@@ -2142,5 +2320,158 @@ onMounted(load);
 .cust-card-item.is-selected .cust-radio-check {
   background: #0284c7;
   border-color: #0284c7;
+}
+
+/* R2 Styles: Customer title, quick sale, and merge bar */
+.batch-merge-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #eff6ff;
+  border: 1.5px solid #93c5fd;
+  border-radius: 12px;
+  padding: 10px 14px;
+  gap: 12px;
+}
+.merge-bar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.merge-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e40af;
+}
+.merge-sub {
+  font-size: 11px;
+  color: #3b82f6;
+}
+.merge-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn-merge-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+.btn-merge-cancel {
+  background: transparent;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.order-card.card-selected-merge {
+  border-color: #3b82f6;
+  background: #f8faff;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+.order-card-header-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.order-merge-check {
+  margin-top: 3px;
+  cursor: pointer;
+}
+.order-merge-check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #2563eb;
+}
+.order-title-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.order-customer-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cust-prefix {
+  font-size: 16px;
+}
+.cust-name-text {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-main, #0f172a);
+}
+.order-no-sub {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.order-items-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.item-preview-pill {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #334155;
+}
+.item-preview-more {
+  font-size: 11px;
+  color: #64748b;
+  align-self: center;
+  font-style: italic;
+}
+
+.order-bottom-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.order-total-sum {
+  font-size: 13px;
+  color: #0f172a;
+}
+.btn-quick-sale {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+  transition: transform 0.15s ease;
+}
+.btn-quick-sale:hover {
+  transform: translateY(-1px);
 }
 </style>

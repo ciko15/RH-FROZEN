@@ -1108,10 +1108,18 @@ async function loadOrderSessionToCart(orderData) {
 
   activeOrderId.value = orderData.order_id || '';
 
-  // Set customer yang dipilih
+  // Set customer yang dipilih atau cari berdasarkan nama pelanggan order
   if (orderData.customer_id) {
     selectedCustomerId.value = orderData.customer_id;
     await loadCustomerPrices(orderData.customer_id);
+  } else if (orderData.customer_name) {
+    const found = customers.value.find(c =>
+      String(c.name || '').trim().toLowerCase() === String(orderData.customer_name || '').trim().toLowerCase()
+    );
+    if (found) {
+      selectedCustomerId.value = found.id;
+      await loadCustomerPrices(found.id);
+    }
   }
 
   // Masukkan item-item yang dikirim ke dalam cart

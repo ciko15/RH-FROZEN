@@ -135,20 +135,24 @@ export default async function handler(req, res) {
 
       const resultInvoice = await callGas('createSalesTx', gasPayload);
 
-      // Jika transaksi berasal dari order_id, pastikan status pesanan diupdate menjadi "Sudah Jadi Transaksi"
+      // Jika transaksi berasal dari order_id (bisa koma jika merge order), pastikan status pesanan diupdate menjadi "Sudah Jadi Transaksi"
       if (data.order_id) {
         try {
           const tabs = await getTabsBatch(['Orders'], true);
           const orders = tabs.Orders || [];
-          const matchedOrder = orders.find(o => o.id === data.order_id || o.order_no === data.order_id);
-          if (matchedOrder && matchedOrder._rowIndex) {
-            matchedOrder.status = CR_CONFIG.STATUS_TRANSACTED;
-            matchedOrder.updated_at = new Date().toISOString();
-            const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by', 'deleted_at', 'deleted_by'];
-            await updateRow('Orders', matchedOrder._rowIndex, matchedOrder, ORDER_HEADERS);
-            const { clearCache } = await import('../_lib/cache.js');
-            clearCache();
+          const orderIdList = String(data.order_id).split(',').map(id => id.trim()).filter(Boolean);
+          const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'customer_id', 'nama_pelanggan', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by', 'deleted_at', 'deleted_by'];
+
+          for (const targetId of orderIdList) {
+            const matchedOrder = orders.find(o => o.id === targetId || o.order_no === targetId);
+            if (matchedOrder && matchedOrder._rowIndex) {
+              matchedOrder.status = CR_CONFIG.STATUS_TRANSACTED;
+              matchedOrder.updated_at = new Date().toISOString();
+              await updateRow('Orders', matchedOrder._rowIndex, matchedOrder, ORDER_HEADERS);
+            }
           }
+          const { clearCache } = await import('../_lib/cache.js');
+          clearCache();
         } catch (updateErr) {
           console.warn('[UPDATE_ORDER_STATUS_AFTER_TX] Gagal update status order:', updateErr.message);
         }
