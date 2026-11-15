@@ -883,7 +883,7 @@ async function openSendStockModal() {
 
     // Coba muat data stok sales saat ini jika ada endpoint
     try {
-      const stockRes = await apiFetch('/api/sales-stock');
+      const stockRes = await apiFetch('/api/products/sales-stock');
       const sMap = {};
       (stockRes.data || []).forEach(st => {
         if (!sMap[st.sales_id]) sMap[st.sales_id] = {};
