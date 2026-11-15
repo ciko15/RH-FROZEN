@@ -37,11 +37,27 @@ export default async function handler(req, res) {
       const statusFilter = req.query.status;
       const search = (req.query.search || '').toLowerCase().trim();
 
-      const tabs = await getTabsBatch(['Orders', 'OrderItems', 'Users', 'Products']);
+      const tabs = await getTabsBatch(['Orders', 'OrderItems', 'Users', 'Products', 'Invoices']);
       let orders = (tabs.Orders || []).filter(o => !o.type || o.type === 'STOCK_REQUEST' || (o.order_no && o.order_no.startsWith('STK-')));
       const orderItems = tabs.OrderItems || [];
       const users = tabs.Users || [];
       const products = tabs.Products || [];
+      const invoices = tabs.Invoices || [];
+
+      // Bangun mapping dari Invoices yang menautkan Order #STK-... ke nama pelanggan riil
+      const invoiceOrderCustomerMap = new Map();
+      invoices.forEach(inv => {
+        if (inv.note && inv.customer_name) {
+          const matches = String(inv.note).match(/STK-[A-Z0-9-]+/g);
+          if (matches) {
+            matches.forEach(no => {
+              if (!invoiceOrderCustomerMap.has(no)) {
+                invoiceOrderCustomerMap.set(no, String(inv.customer_name).trim());
+              }
+            });
+          }
+        }
+      });
 
       // Normalisasi jika kolom sempat bergeser (misal sales_id kosong tapi ada di branch_id)
       orders = orders.map(o => {
@@ -106,11 +122,43 @@ export default async function handler(req, res) {
 
         const hasCorrection = items.some(it => it.qty_shipped !== null && it.qty_shipped !== undefined && it.qty_shipped !== it.qty);
 
-        // R2: Nama pelanggan di tingkat header order (fallback ke item pertama atau default)
+        // R2: Nama pelanggan di tingkat header order (dengan backward compatibility & fallback komprehensif)
         const firstItemPemesan = items.find(it => it.nama_pemesan && it.nama_pemesan !== '-' && it.nama_pemesan !== 'Tanpa Nama')?.nama_pemesan;
-        const resolvedNamaPelanggan = (o.nama_pelanggan && o.nama_pelanggan.trim())
+        
+        let resolvedNamaPelanggan = (o.nama_pelanggan && o.nama_pelanggan.trim() && o.nama_pelanggan !== 'Tanpa Nama')
           ? o.nama_pelanggan.trim()
-          : (firstItemPemesan || o.customer_name || CR_CONFIG.DEFAULT_NAMA_PELANGGAN);
+          : '';
+
+        // 1. Cek dari Invoice jika order ini sudah pernah ditransaksikan
+        if (!resolvedNamaPelanggan && invoiceOrderCustomerMap.has(o.order_no)) {
+          resolvedNamaPelanggan = invoiceOrderCustomerMap.get(o.order_no);
+        }
+
+        // 2. Cek dari nama_pemesan item
+        if (!resolvedNamaPelanggan && firstItemPemesan) {
+          resolvedNamaPelanggan = firstItemPemesan.trim();
+        }
+
+        // 3. Cek dari field o.note (banyak order lama mencatat nama pelanggan di kolom note)
+        if (!resolvedNamaPelanggan && o.note && o.note.trim()) {
+          const cleanNote = o.note.split('|')[0].trim().replace(/^(Dihapus oleh|Batal:)\s*.*$/i, '').trim();
+          if (cleanNote) {
+            resolvedNamaPelanggan = cleanNote;
+          }
+        }
+
+        // 4. Cek dari field client_key jika berisi teks nama pelanggan
+        if (!resolvedNamaPelanggan && o.client_key && !o.client_key.includes('-') && !o.client_key.startsWith('test-') && o.client_key.trim()) {
+          const cleanCk = o.client_key.split('|')[0].trim().replace(/^(Dihapus oleh|Batal:)\s*.*$/i, '').trim();
+          if (cleanCk) {
+            resolvedNamaPelanggan = cleanCk;
+          }
+        }
+
+        // 5. Fallback ke customer_name atau default
+        if (!resolvedNamaPelanggan) {
+          resolvedNamaPelanggan = o.customer_name || CR_CONFIG.DEFAULT_NAMA_PELANGGAN;
+        }
 
         return {
           ...o,
@@ -223,7 +271,8 @@ export default async function handler(req, res) {
         items: data.items,
         sales_id: authUser.id,
         branch_id: branchId,
-        note: data.note,
+        nama_pelanggan: data.nama_pelanggan,
+        note: (data.nama_pelanggan ? `${data.nama_pelanggan}${data.note ? ' - ' + data.note : ''}` : data.note),
         client_key: idempotencyKey || data.client_key,
       };
 

@@ -35,7 +35,7 @@ export default async function handler(req, res) {
       throw new ApiError(400, 'BAD_REQUEST', 'ID Order wajib disertakan');
     }
 
-    const tabs = await getTabsBatch(['Orders', 'OrderItems', 'Customers', 'Users', 'Products']);
+    const tabs = await getTabsBatch(['Orders', 'OrderItems', 'Customers', 'Users', 'Products', 'Invoices']);
     const orders = tabs.Orders || [];
     const order = orders.find(o => o.id === orderId);
 
@@ -58,6 +58,8 @@ export default async function handler(req, res) {
       const items = (tabs.OrderItems || []).filter(oi => oi.order_id === orderId);
       const customer = (tabs.Customers || []).find(c => c.id === order.customer_id);
       const sales = (tabs.Users || []).find(u => u.id === order.sales_id);
+      const invoices = tabs.Invoices || [];
+      const invoiceLinked = invoices.find(inv => inv.note && inv.note.includes(order.order_no) && inv.customer_name);
 
       const mappedItems = items.map(it => {
         const prod = (tabs.Products || []).find(p => p.id === it.product_id);
@@ -84,9 +86,32 @@ export default async function handler(req, res) {
       const totalShippedQty = mappedItems.reduce((sum, it) => sum + (it.qty_shipped !== null ? it.qty_shipped : 0), 0);
 
       const firstItemPemesan = mappedItems.find(it => it.nama_pemesan && it.nama_pemesan !== '-' && it.nama_pemesan !== 'Tanpa Nama')?.nama_pemesan;
-      const resolvedNamaPelanggan = (order.nama_pelanggan && order.nama_pelanggan.trim())
+      
+      let resolvedNamaPelanggan = (order.nama_pelanggan && order.nama_pelanggan.trim() && order.nama_pelanggan !== 'Tanpa Nama')
         ? order.nama_pelanggan.trim()
-        : (firstItemPemesan || customer?.name || CR_CONFIG.DEFAULT_NAMA_PELANGGAN);
+        : '';
+
+      if (!resolvedNamaPelanggan && invoiceLinked?.customer_name) {
+        resolvedNamaPelanggan = invoiceLinked.customer_name.trim();
+      }
+
+      if (!resolvedNamaPelanggan && firstItemPemesan) {
+        resolvedNamaPelanggan = firstItemPemesan.trim();
+      }
+
+      if (!resolvedNamaPelanggan && order.note && order.note.trim()) {
+        const cleanNote = order.note.split('|')[0].trim().replace(/^(Dihapus oleh|Batal:)\s*.*$/i, '').trim();
+        if (cleanNote) resolvedNamaPelanggan = cleanNote;
+      }
+
+      if (!resolvedNamaPelanggan && order.client_key && !order.client_key.includes('-') && !order.client_key.startsWith('test-') && order.client_key.trim()) {
+        const cleanCk = order.client_key.split('|')[0].trim().replace(/^(Dihapus oleh|Batal:)\s*.*$/i, '').trim();
+        if (cleanCk) resolvedNamaPelanggan = cleanCk;
+      }
+
+      if (!resolvedNamaPelanggan) {
+        resolvedNamaPelanggan = customer?.name || CR_CONFIG.DEFAULT_NAMA_PELANGGAN;
+      }
 
       const enriched = {
         ...order,
