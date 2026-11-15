@@ -37,11 +37,21 @@ export default async function handler(req, res) {
 
     const tabs = await getTabsBatch(['Orders', 'OrderItems', 'Customers', 'Users', 'Products', 'Invoices']);
     const orders = tabs.Orders || [];
-    const order = orders.find(o => o.id === orderId);
+    let order = orders.find(o => o.id === orderId);
 
     if (!order) {
       throw new ApiError(404, 'NOT_FOUND', 'Order tidak ditemukan');
     }
+
+    // Normalisasi order jika ada pergeseran kolom
+    let normalizedStatus = order.status || '';
+    if (!normalizedStatus && order.type && ['Proses', 'Dikirim', 'Sudah Jadi Transaksi', 'Dibatalkan'].includes(order.type)) {
+      normalizedStatus = order.type;
+    }
+    if (!normalizedStatus) {
+      normalizedStatus = 'Proses';
+    }
+    order.status = normalizedStatus;
 
     // ==========================================
     // GET: Detail Order
