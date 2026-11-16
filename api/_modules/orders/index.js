@@ -59,24 +59,38 @@ export default async function handler(req, res) {
         }
       });
 
-      // Normalisasi jika kolom sempat bergeser (misal sales_id kosong tapi ada di branch_id)
+      // Normalisasi status order jika ada pergeseran kolom atau penanda pembatalan/penghapusan
+      const VALID_STATUSES = ['Proses', 'Dikirim', 'Sudah Jadi Transaksi', 'Dibatalkan'];
+
       orders = orders.map(o => {
         let sales_id = o.sales_id || '';
         let branch_id = o.branch_id || '';
-        let status = o.status || '';
 
         // Jika sales_id kosong tapi branch_id terisi kode USR-SLS-* atau UUID sales
         if (!sales_id && branch_id && (branch_id.startsWith('USR-SLS-') || users.some(u => u.id === branch_id))) {
           sales_id = branch_id;
-          branch_id = status.startsWith('BR-') ? status : '';
-          status = o.note && (o.note === 'Dibatalkan' || o.note === 'Dikirim' || o.note === 'Proses') ? o.note : 'Dibatalkan';
+          branch_id = (o.status && o.status.startsWith('BR-')) ? o.status : '';
+        }
+
+        // Resolusi status yang akurat
+        let status = '';
+        if (VALID_STATUSES.includes(o.status)) {
+          status = o.status;
+        } else if (VALID_STATUSES.includes(o.type)) {
+          status = o.type;
+        } else if (VALID_STATUSES.includes(o.note)) {
+          status = o.note;
+        } else if (o.deleted_at || (o.note && o.note.includes('Dihapus oleh')) || (o.client_key && String(o.client_key).includes('Dihapus oleh'))) {
+          status = 'Dibatalkan';
+        } else {
+          status = 'Proses';
         }
 
         return {
           ...o,
           sales_id,
           branch_id,
-          status: status || o.status || 'Proses'
+          status
         };
       });
 

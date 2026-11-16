@@ -141,7 +141,7 @@ export default async function handler(req, res) {
           const tabs = await getTabsBatch(['Orders'], true);
           const orders = tabs.Orders || [];
           const orderIdList = String(data.order_id).split(',').map(id => id.trim()).filter(Boolean);
-          const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'customer_id', 'nama_pelanggan', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by', 'deleted_at', 'deleted_by'];
+          const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by'];
 
           for (const targetId of orderIdList) {
             const matchedOrder = orders.find(o => o.id === targetId || o.order_no === targetId);

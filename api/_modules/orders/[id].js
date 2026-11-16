@@ -22,7 +22,7 @@ const editOrderSchema = z.object({
   })).min(1, 'Minimal 1 barang').optional()
 });
 
-const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'customer_id', 'nama_pelanggan', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by', 'deleted_at', 'deleted_by'];
+const ORDER_HEADERS = ['id', 'order_no', 'order_date', 'order_time', 'sales_id', 'branch_id', 'status', 'note', 'type', 'client_key', 'created_at', 'updated_at', 'cancelled_by'];
 const CUST_HEADERS = ['id', 'name', 'address', 'phone', 'branch_id', 'sales_id', 'balance', 'credit_limit', 'term_days', 'active'];
 const ORDER_ITEM_HEADERS = ['id', 'order_id', 'product_id', 'name', 'qty', 'nama_pemesan', 'shortage', 'qty_shipped', 'deleted_at'];
 
@@ -296,6 +296,7 @@ export default async function handler(req, res) {
         order.deleted_at = nowIso;
         order.deleted_by = authUser.username || authUser.id;
         order.note = (order.note ? order.note + ' | ' : '') + 'Dihapus oleh Admin ' + (authUser.username || '');
+        order.updated_at = nowIso;
         if (order._rowIndex) {
           await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
         }
@@ -307,6 +308,8 @@ export default async function handler(req, res) {
         order.status = CR_CONFIG.STATUS_CANCELLED;
         order.deleted_at = nowIso;
         order.deleted_by = authUser.username || authUser.id;
+        order.cancelled_by = authUser.id || authUser.username;
+        order.updated_at = nowIso;
         order.note = (order.note ? order.note + ' | ' : '') + 'Dihapus oleh ' + authUser.username;
         if (order._rowIndex) {
           await updateRow('Orders', order._rowIndex, order, ORDER_HEADERS);
